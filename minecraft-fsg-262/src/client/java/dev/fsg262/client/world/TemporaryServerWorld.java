@@ -64,6 +64,10 @@ public final class TemporaryServerWorld implements AutoCloseable {
 
     public static TemporaryServerWorld open(WorldCreationContext context, long seed)
             throws IOException {
+        if (Boolean.getBoolean("fsg262.debug.forceTemporaryServerBootstrapFailure")) {
+            throw new BootstrapException(seed,
+                    new IllegalStateException("Forced bootstrap failure (debug smoke path)"));
+        }
         Path directory = Files.createTempDirectory("fsg262-server-");
         ExecutorService serverExecutor = Executors.newSingleThreadExecutor(
                 r -> new Thread(r, "fsg262-temporary-server"));
@@ -112,7 +116,21 @@ public final class TemporaryServerWorld implements AutoCloseable {
             reloadExecutor.shutdownNow();
             delete(directory);
             if (failure instanceof IOException io) throw io;
-            throw new IOException("Unable to bootstrap temporary 26.2 server world", failure);
+            throw new BootstrapException(seed, failure);
+        }
+    }
+
+    /** Error boundary used by the analyzer so bootstrap failures are never lost. */
+    public static final class BootstrapException extends IOException {
+        private final long seed;
+
+        public BootstrapException(long seed, Throwable cause) {
+            super("Unable to bootstrap temporary 26.2 server world", cause);
+            this.seed = seed;
+        }
+
+        public long seed() {
+            return seed;
         }
     }
 

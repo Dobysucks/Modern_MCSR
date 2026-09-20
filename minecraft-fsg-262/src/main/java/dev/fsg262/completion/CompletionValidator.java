@@ -13,6 +13,9 @@ public final class CompletionValidator {
         var failures = new ArrayList<String>();
         var unknown = new ArrayList<String>();
         if (!filterPassed) failures.add("Seed filter did not pass");
+        if (evidence.evidenceType() == EvidenceType.UNAVAILABLE) {
+            unknown.add("evidence source");
+        }
 
         Map<String, VerificationStatus> checks = new LinkedHashMap<>();
         checks.put("resources", evidence.resources());

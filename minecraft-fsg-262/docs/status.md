@@ -52,6 +52,14 @@
   and `fillFromNoise` pipeline to populate a bounded in-memory vanilla
   `ProtoChunk`. `GeneratedWorldInspector` scans real block states, fluid
   source blocks, and any block entities stored by those generation stages.
+- Temporary-server bootstrap failures are now retained as structured
+  `WorldgenAnalysisFailure` evidence (seed, stage, exception type, reason,
+  elapsed time, fallback-attempted flag, and `NOT_VERIFIED` status) and logged
+  instead of being silently swallowed. For a deterministic smoke path, launch
+  the client with
+  `-Dfsg262.debug.forceTemporaryServerBootstrapFailure=true`; the fallback
+  path and diagnostic log entry can then be exercised without depending on
+  resource-pack state.
 - MCSR configuration is integrated as a fourth native Create New World tab
   beside the vanilla Game, World, and More tabs. Settings are shared through
   `WorldCreationController` and persisted to the client config file; no
@@ -60,11 +68,11 @@
 ## Verified boundary and remaining work
 
 1. Resolve exact 26.2 biome and structure APIs from the dependency sources.
-2. Build or enter a real 26.2 `WorldGenRegion`/`ServerLevel` generation
-   lifecycle before inspecting generated blocks, block entities, or loot.
-   `ProtoChunk` exposes storage, but 26.2 has no standalone
-   `ProtoChunk`-to-`WorldGenLevel` adapter; `WorldGenRegion` requires live
-   server generation holders and a `ChunkStep`.
+2. Exercise the temporary 26.2 `WorldLoader`/`WorldStem`/`ServerLevel`
+   lifecycle in a completed runtime candidate analysis. The compile-safe
+   lifecycle now uses a temporary directory and real `ServerChunkCache`
+   generation, but there is not yet a completed automated runtime smoke
+   result in the repository.
 3. Add intended-structure candidate provenance and real seed reports.
 4. Persist Create New World settings across screen instances and connect the
    coordinator to a verified 26.2 world-generation evaluator.
@@ -74,9 +82,11 @@ The local evaluator is wired into the Create New World search for all five seed
 types and performs no network access. It now performs real placement, biome,
 terrain, and optional direct structure-start/piece geometry queries against the
 selected Create New World context, including Nether Bastion/Fortress geometry.
-It still intentionally reports `NOT VERIFIED` for seed search because the
-current world-generation adapter cannot safely inspect generated blocks, block
-entities, loot, Nether routes, strongholds, End progression, or natural lava.
+It still intentionally reports `NOT VERIFIED` for seed search when real
+server-backed evidence is unavailable. The prototype evaluator has explicitly
+labelled deterministic simulated starting resources, artificial-lava fallback,
+and MCSR barter evidence; these are not vanilla observations and cannot hide a
+failed real-server bootstrap.
 Placement or piece evidence is not promoted to filter acceptance; no candidate
 can be accepted from incomplete evidence.
 The client screen does not claim that
@@ -92,12 +102,11 @@ NOT_VERIFIED counts and candidates per second. No candidate is accepted when
 the adapter reports `NOT_VERIFIED`.
 
 The following requirements remain intentionally NOT_VERIFIED rather than
-fabricated: structure-template-generated block scans, block entities/chests, loot tables,
-resource totals, nearby generated-structure exclusions, natural lava pools,
-actual artificial lava block placement, Nether terrain/routes, Bastion and
-Fortress contents, the 26.2 equivalent of the historical magma-ravine rule,
+fabricated: completed runtime temporary-server smoke proof,
+structure-template-generated block scans, block entities/chests, vanilla loot
+tables, real resource totals, nearby generated-structure exclusions, actual
+artificial-lava block placement, Nether terrain/routes, Bastion and Fortress
+contents, the 26.2 equivalent of the historical magma-ravine rule,
 stronghold/End/Dragon verification, evidence-rich seedbank rows, and the
-end-to-end accepted-seed runtime proof. Terrain blocks are now generated and
-scanned through `ProtoChunk`; structure-template placement and lazy chest loot
-still require the server world lifecycle described above, so those results are
-not promoted to acceptance.
+end-to-end accepted-seed runtime proof. Prototype simulations remain distinct
+from real worldgen and cannot by themselves prove a vanilla PASS.

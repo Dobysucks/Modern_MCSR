@@ -11,9 +11,17 @@ public record WorldgenAnalysisMetrics(
         long lootMillis,
         long netherMillis,
         long lavaMillis,
-        long totalMillis
+        long totalMillis,
+        WorldgenAnalysisFailure failure
 ) {
+    public WorldgenAnalysisMetrics(long placementMillis, long terrainMillis,
+                                   long pieceInspectionMillis, long lootMillis,
+                                   long netherMillis, long lavaMillis, long totalMillis) {
+        this(placementMillis, terrainMillis, pieceInspectionMillis, lootMillis,
+                netherMillis, lavaMillis, totalMillis, null);
+    }
+
     public static WorldgenAnalysisMetrics empty() {
-        return new WorldgenAnalysisMetrics(0, 0, 0, 0, 0, 0, 0);
+        return new WorldgenAnalysisMetrics(0, 0, 0, 0, 0, 0, 0, null);
     }
 }

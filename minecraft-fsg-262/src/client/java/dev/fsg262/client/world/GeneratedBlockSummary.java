@@ -13,8 +13,17 @@ public record GeneratedBlockSummary(
         List<BlockPos> lavaSources,
         int blockEntityCount,
         boolean verified,
-        String failureReason
+        String failureReason,
+        WorldgenAnalysisFailure failure
 ) {
+    public GeneratedBlockSummary(int chunkX, int chunkZ, int scannedBlocks,
+                                 Map<String, Integer> blockCounts,
+                                 List<BlockPos> lavaSources, int blockEntityCount,
+                                 boolean verified, String failureReason) {
+        this(chunkX, chunkZ, scannedBlocks, blockCounts, lavaSources, blockEntityCount,
+                verified, failureReason, null);
+    }
+
     public GeneratedBlockSummary {
         blockCounts = Map.copyOf(blockCounts);
         lavaSources = List.copyOf(lavaSources);
@@ -22,5 +31,9 @@ public record GeneratedBlockSummary(
 
     public static GeneratedBlockSummary unavailable(String reason) {
         return new GeneratedBlockSummary(0, 0, 0, Map.of(), List.of(), 0, false, reason);
+    }
+
+    public static GeneratedBlockSummary unavailable(String reason, WorldgenAnalysisFailure failure) {
+        return new GeneratedBlockSummary(0, 0, 0, Map.of(), List.of(), 0, false, reason, failure);
     }
 }

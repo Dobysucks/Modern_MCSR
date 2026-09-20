@@ -33,6 +33,8 @@ import net.minecraft.world.level.levelgen.blending.Blender;
 
 import java.util.Locale;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -42,6 +44,7 @@ import java.util.function.BooleanSupplier;
  * remain unavailable until an in-memory structure-generation level is added.
  */
 public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer, EvaluatorEvidenceProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Minecraft26WorldgenAnalyzer.class);
     private final WorldCreationContext context;
     private final StructureTemplateManager templateManager;
     private final RealChunkGenerationHarness generationHarness;
@@ -54,6 +57,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
     private volatile GeneratedBlockSummary lastTerrainInspection =
             GeneratedBlockSummary.unavailable("Not inspected");
     private volatile long lastTerrainSeed;
+    private volatile WorldgenAnalysisFailure lastFailure;
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
         this(context, null);
@@ -144,6 +148,10 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         return lastMetrics;
     }
 
+    public WorldgenAnalysisFailure lastFailure() {
+        return lastFailure;
+    }
+
     public StructurePlacementInspection lastInspection() {
         return lastInspection;
     }
@@ -194,6 +202,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             ChunkPos chunkPos,
             BooleanSupplier cancelled
     ) {
+        lastFailure = null;
         if (cancelled.getAsBoolean()) {
             return GeneratedBlockSummary.unavailable("Cancelled before terrain generation");
         }
@@ -204,6 +213,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             return GeneratedBlockSummary.unavailable("Dimension is not noise-based");
         }
         var type = stem.type().value();
+        long bootstrapStarted = System.nanoTime();
         try (var temporary = TemporaryServerWorld.open(context, seed)) {
             var level = temporary.server().getLevel(
                     nether ? net.minecraft.world.level.Level.NETHER
@@ -218,8 +228,8 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         } catch (java.util.concurrent.CancellationException cancelledGeneration) {
             return GeneratedBlockSummary.unavailable("Cancelled during server generation");
         } catch (RuntimeException | java.io.IOException bootstrapFailure) {
-            // A client resource pack may not be reloadable as a server pack.
-            // Keep the bounded diagnostic path available in that case.
+            recordFailure(seed, "temporary-server-bootstrap", bootstrapFailure,
+                    bootstrapStarted, true);
         }
         try {
             var generated = nether
@@ -230,11 +240,17 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                 return GeneratedBlockSummary.unavailable(
                         generated.stage(GenerationStage.TERRAIN).detail());
             }
-            return GeneratedWorldInspector.inspect(generated.chunk(), type.minY(),
+            GeneratedWorldInspector.inspect(generated.chunk(), type.minY(),
                     type.minY() + type.height());
-        } catch (RuntimeException failure) {
             return GeneratedBlockSummary.unavailable(
-                    "Vanilla terrain generation failed: " + failure.getClass().getSimpleName());
+                    "Temporary server bootstrap failed; fallback terrain is diagnostic only",
+                    lastFailure);
+        } catch (RuntimeException failure) {
+            recordFailure(seed, "fallback-terrain-generation", failure,
+                    bootstrapStarted, true);
+            return GeneratedBlockSummary.unavailable(
+                    "Terrain generation failed (" + failure.getClass().getSimpleName()
+                            + "): " + failure.getMessage(), lastFailure);
         }
     }
 
@@ -612,7 +628,23 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
     private void recordMetrics(long placementMillis, long terrainNanos, long totalNanos) {
         lastMetrics = new WorldgenAnalysisMetrics(
                 placementMillis, terrainNanos / 1_000_000L, 0, 0, 0, 0,
-                totalNanos / 1_000_000L);
+                totalNanos / 1_000_000L, lastFailure);
+    }
+
+    private void recordFailure(long seed, String stage, Throwable failure,
+                               long started, boolean fallbackAttempted) {
+        Throwable cause = failure;
+        if (failure instanceof TemporaryServerWorld.BootstrapException
+                && failure.getCause() != null) {
+            cause = failure.getCause();
+        }
+        lastFailure = WorldgenAnalysisFailure.of(
+                seed, stage, cause, started, fallbackAttempted);
+        LOGGER.error("Worldgen analysis failed: seed={} stage={} exception={} reason={} "
+                        + "elapsedMs={} fallbackAttempted={} status={}",
+                lastFailure.seed(), lastFailure.stage(), lastFailure.exceptionType(),
+                lastFailure.reason(), lastFailure.elapsedMillis(),
+                lastFailure.fallbackAttempted(), lastFailure.verificationStatus());
     }
 
     private record ChunkCandidate(ChunkPos chunk, String structureKey, Holder<Structure> structure) {

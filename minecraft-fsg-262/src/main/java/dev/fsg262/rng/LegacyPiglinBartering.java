@@ -63,6 +63,13 @@ public final class LegacyPiglinBartering {
     }
 
     public boolean hasWindowGuarantees(long rngSeed, int startIndex) {
+        return checkWindow(rngSeed, startIndex).passed();
+    }
+
+    public BarterWindowCheck checkWindow(long rngSeed, int startIndex) {
+        if (startIndex < 0 || startIndex % WINDOW_SIZE != 0) {
+            throw new IllegalArgumentException("window start must be a non-negative multiple of 72");
+        }
         int pearls = 0;
         int obsidian = 0;
         for (int i = startIndex; i < startIndex + WINDOW_SIZE; i++) {
@@ -70,7 +77,8 @@ public final class LegacyPiglinBartering {
             if (result.outputItem().equals("ender_pearl")) pearls++;
             if (result.outputItem().equals("obsidian")) obsidian++;
         }
-        return pearls == PEARL_TRADES_PER_WINDOW && obsidian >= GUARANTEED_OBSIDIAN_PER_WINDOW;
+        return new BarterWindowCheck(startIndex, pearls, obsidian,
+                pearls == PEARL_TRADES_PER_WINDOW && obsidian >= GUARANTEED_OBSIDIAN_PER_WINDOW);
     }
 
     private int[] permutation(long seed, int window) {

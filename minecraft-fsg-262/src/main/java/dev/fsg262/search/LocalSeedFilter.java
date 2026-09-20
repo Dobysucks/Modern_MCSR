@@ -4,6 +4,7 @@ import dev.fsg262.completion.CompletionEvaluation;
 import dev.fsg262.completion.CompletionEvidence;
 import dev.fsg262.completion.CompletionValidator;
 import dev.fsg262.completion.VerificationStatus;
+import dev.fsg262.completion.EvidenceType;
 import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.filter.OverworldFilter;
 import dev.fsg262.filter.SeedEvaluation;
@@ -11,6 +12,7 @@ import dev.fsg262.filter.SeedFilter;
 import dev.fsg262.filter.SeedTypeChoice;
 import dev.fsg262.filter.StartType;
 import dev.fsg262.filter.WorldGenerationAnalyzer;
+import dev.fsg262.filter.SimulatedWorldGenerationAnalyzer;
 import dev.fsg262.rng.LegacyPiglinBartering;
 
 import java.util.List;
@@ -58,7 +60,9 @@ public final class LocalSeedFilter {
                     VerificationStatus.NOT_VERIFIED, notVerifiedCompletion());
         }
 
-        boolean rngPass = bartering.hasWindowGuarantees(rngSeed, 0);
+        var window = bartering.checkWindow(rngSeed, 0);
+        boolean rngPass = window.pearlTrades() == profile.barterExactPearlTradesPerWindow()
+                && window.obsidianTrades() >= profile.barterMinimumObsidianPerWindow();
         var rngStatus = rngPass ? VerificationStatus.PASS : VerificationStatus.FAIL;
         if (!rngPass) {
             return new LocalFilterResult(VerificationStatus.FAIL,
@@ -66,8 +70,10 @@ public final class LocalSeedFilter {
                     rngStatus, notVerifiedCompletion());
         }
 
+        CompletionEvidence completionEvidence = worldgen instanceof SimulatedWorldGenerationAnalyzer
+                ? simulatedEvidence() : notVerifiedEvidence();
         CompletionEvaluation completionResult = requireCompletable
-                ? completion.validate(true, notVerifiedEvidence())
+                ? completion.validate(true, completionEvidence)
                 : new CompletionEvaluation(VerificationStatus.PASS, true, List.of(), List.of());
         VerificationStatus result = requireCompletable
                 ? completionResult.status()
@@ -96,5 +102,15 @@ public final class LocalSeedFilter {
                 VerificationStatus.NOT_VERIFIED, VerificationStatus.NOT_VERIFIED,
                 VerificationStatus.NOT_VERIFIED, VerificationStatus.NOT_VERIFIED,
                 "Requires a verified Minecraft 26.2 world-generation adapter");
+    }
+
+    private CompletionEvidence simulatedEvidence() {
+        return new CompletionEvidence(
+                VerificationStatus.PASS, VerificationStatus.PASS,
+                VerificationStatus.PASS, VerificationStatus.PASS,
+                VerificationStatus.PASS, VerificationStatus.PASS,
+                VerificationStatus.PASS, VerificationStatus.PASS,
+                "Deterministic prototype progression evidence; not vanilla world observation",
+                EvidenceType.SIMULATED);
     }
 }
