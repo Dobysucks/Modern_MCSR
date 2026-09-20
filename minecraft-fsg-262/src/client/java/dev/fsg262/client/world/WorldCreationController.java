@@ -13,8 +13,6 @@ import dev.fsg262.search.SeedSearchManager;
 import dev.fsg262.search.SeedSearchProgress;
 import dev.fsg262.search.SeedSearchRequest;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 import java.io.IOException;
@@ -98,12 +96,10 @@ public final class WorldCreationController implements AutoCloseable {
         var currentSettings = settings;
         var profile = profile(currentSettings.profileName());
         var worldgenContext = screen.getUiState().getSettings();
-        var templateManager = new StructureTemplateManager(
-                Minecraft.getInstance().getResourceManager(),
-                null,
-                Minecraft.getInstance().getFixerUpper(),
-                worldgenContext.worldgenLoadContext().lookupOrThrow(Registries.BLOCK));
-        var analyzer = new Minecraft26WorldgenAnalyzer(worldgenContext, templateManager);
+        // Structure template loading requires a LevelStorageAccess.  The
+        // temporary server owns that lifecycle; do not pass a null storage
+        // access to StructureTemplateManager from the client screen.
+        var analyzer = new Minecraft26WorldgenAnalyzer(worldgenContext, null);
         EvaluatorRuntime.install(analyzer, analyzer);
         var localFilter = new LocalSeedFilter(analyzer);
         var request = new SeedSearchRequest(

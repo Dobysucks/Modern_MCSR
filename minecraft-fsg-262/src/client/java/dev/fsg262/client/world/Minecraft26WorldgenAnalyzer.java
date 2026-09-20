@@ -204,6 +204,23 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             return GeneratedBlockSummary.unavailable("Dimension is not noise-based");
         }
         var type = stem.type().value();
+        try (var temporary = TemporaryServerWorld.open(context, seed)) {
+            var level = temporary.server().getLevel(
+                    nether ? net.minecraft.world.level.Level.NETHER
+                            : net.minecraft.world.level.Level.OVERWORLD);
+            if (level == null) {
+                return GeneratedBlockSummary.unavailable(
+                        "Temporary server did not create the requested dimension");
+            }
+            var generated = temporary.generate(level, chunkPos, cancelled).join();
+            return GeneratedWorldInspector.inspect(generated.chunk(),
+                    level.getMinY(), level.getMinY() + level.getHeight());
+        } catch (java.util.concurrent.CancellationException cancelledGeneration) {
+            return GeneratedBlockSummary.unavailable("Cancelled during server generation");
+        } catch (RuntimeException | java.io.IOException bootstrapFailure) {
+            // A client resource pack may not be reloadable as a server pack.
+            // Keep the bounded diagnostic path available in that case.
+        }
         try {
             var generated = nether
                     ? generationHarness.generateNether(seed, chunkPos, cancelled)
