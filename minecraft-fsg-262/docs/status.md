@@ -44,6 +44,10 @@
 - A bounded diagnostic benchmark reports tested, PASS, FAIL, NOT_VERIFIED,
   cancellation, elapsed time, and candidates per second without changing
   evaluator decisions.
+- Nether structure inspection now uses the selected 26.2 Nether generator,
+  Nether-specific random state and height access, and real Bastion or
+  Fortress `Structure.generate` calls. It records actual piece geometry and
+  remains geometry-only evidence.
 - MCSR configuration is integrated as a fourth native Create New World tab
   beside the vanilla Game, World, and More tabs. Settings are shared through
   `WorldCreationController` and persisted to the client config file; no
@@ -52,9 +56,11 @@
 ## Verified boundary and remaining work
 
 1. Resolve exact 26.2 biome and structure APIs from the dependency sources.
-2. Build a real `WorldGenLevel`/`StructureManager` adapter before inspecting
-   generated blocks or block entities. Direct `Structure.generate` is not
-   sufficient for that evidence.
+2. Build or enter a real 26.2 `WorldGenRegion`/`ServerLevel` generation
+   lifecycle before inspecting generated blocks, block entities, or loot.
+   `ProtoChunk` exposes storage, but 26.2 has no standalone
+   `ProtoChunk`-to-`WorldGenLevel` adapter; `WorldGenRegion` requires live
+   server generation holders and a `ChunkStep`.
 3. Add intended-structure candidate provenance and real seed reports.
 4. Persist Create New World settings across screen instances and connect the
    coordinator to a verified 26.2 world-generation evaluator.
@@ -63,11 +69,12 @@
 The local evaluator is wired into the Create New World search for all five seed
 types and performs no network access. It now performs real placement, biome,
 terrain, and optional direct structure-start/piece geometry queries against the
-selected Create New World context, but still intentionally reports
-`NOT VERIFIED` for seed search because the current world-generation adapter is
-not yet capable of generated blocks, loot, block entities, Nether route, or
-natural lava inspection. Placement or piece evidence is not promoted to filter
-acceptance; no candidate can be accepted from incomplete evidence.
+selected Create New World context, including Nether Bastion/Fortress geometry.
+It still intentionally reports `NOT VERIFIED` for seed search because the
+current world-generation adapter cannot safely inspect generated blocks, block
+entities, loot, Nether routes, strongholds, End progression, or natural lava.
+Placement or piece evidence is not promoted to filter acceptance; no candidate
+can be accepted from incomplete evidence.
 The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
@@ -76,5 +83,16 @@ adapter-supplied terrain candidates; it does not mutate playable chunks until a
 
 The dedicated MCSR screen is a configuration/presentation layer only. Search
 still uses the existing asynchronous controller and requires a Create New
-World context for worldgen analysis. No candidate is accepted when the
-adapter reports `NOT_VERIFIED`.
+World context for worldgen analysis. Search progress now reports explicit
+NOT_VERIFIED counts and candidates per second. No candidate is accepted when
+the adapter reports `NOT_VERIFIED`.
+
+The following requirements remain intentionally NOT_VERIFIED rather than
+fabricated: generated block scans, block entities/chests, loot tables,
+resource totals, nearby generated-structure exclusions, natural lava pools,
+actual artificial lava block placement, Nether terrain/routes, Bastion and
+Fortress contents, the 26.2 equivalent of the historical magma-ravine rule,
+stronghold/End/Dragon verification, evidence-rich seedbank rows, and the
+end-to-end accepted-seed runtime proof. The direct structure API produces
+starts and pieces but does not place them; performing that placement requires
+the server world lifecycle described above.

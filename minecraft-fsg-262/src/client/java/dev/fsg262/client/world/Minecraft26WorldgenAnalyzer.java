@@ -100,12 +100,12 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         double distance = Math.hypot(found.x(), found.z());
         lastInspection = new StructurePlacementInspection(
                 true, found.structureKey(), found.chunk(),
-                lastVillageInspection.structureBounds(),
-                lastVillageInspection.verified(),
-                lastVillageInspection.verified()
-                        ? "" : lastVillageInspection.failureReason(),
-                lastVillageInspection.pieceCount(), lastVillageInspection.pieceBounds(),
-                lastVillageInspection.generationTimeMillis());
+                lastGeneratedInspection.structureBounds(),
+                lastGeneratedInspection.verified(),
+                lastGeneratedInspection.verified()
+                        ? "" : lastGeneratedInspection.failureReason(),
+                lastGeneratedInspection.pieceCount(), lastGeneratedInspection.pieceBounds(),
+                lastGeneratedInspection.generationTimeMillis());
         recordMetrics(placementMillis, System.nanoTime() - terrainStart,
                 System.nanoTime() - totalStart);
         return new StartEvaluationInput(
@@ -155,6 +155,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         if (cancelled.getAsBoolean()) {
             return unavailableGenerated(seed, "Cancelled before generation");
         }
+
         var stem = context.selectedDimensions().get(LevelStem.OVERWORLD)
                 .orElseThrow(() -> new IllegalStateException("Overworld dimension is unavailable"));
         if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
@@ -203,6 +204,81 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         } catch (RuntimeException failure) {
             return unavailableGenerated(seed,
                     "Vanilla structure generation failed: " + failure.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Performs real structure-start/piece inspection against the selected
+     * Nether generator. This remains geometry-only until a vanilla
+     * WorldGenRegion is available for block placement.
+     */
+    public StructureGenerationInspectionResult inspectNetherStructure(
+            long seed,
+            boolean bastion,
+            boolean fortress,
+            BooleanSupplier cancelled
+    ) {
+        if (bastion == fortress) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "Select exactly one Nether structure type");
+        }
+        if (cancelled.getAsBoolean()) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "Cancelled before Nether generation");
+        }
+        var stem = context.selectedDimensions().get(LevelStem.NETHER)
+                .orElseThrow(() -> new IllegalStateException("Nether dimension is unavailable"));
+        if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "Nether is not noise-based");
+        }
+        var settings = generator.generatorSettings().unwrapKey()
+                .orElse(NoiseGeneratorSettings.NETHER);
+        var randomState = RandomState.create(context.worldgenLoadContext(), settings, seed);
+        var state = generator.createState(
+                context.worldgenLoadContext().lookupOrThrow(Registries.STRUCTURE_SET),
+                randomState, seed);
+        var tokens = bastion ? new String[]{"bastion"} : new String[]{"fortress"};
+        var found = findStructureByTokens(state, tokens, 128);
+        if (found == null) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "No Nether structure placement found");
+        }
+        if (templateManager == null) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "No vanilla StructureTemplateManager was supplied");
+        }
+        long started = System.nanoTime();
+        try {
+            var type = stem.type().value();
+            var height = LevelHeightAccessor.create(type.minY(), type.height());
+            var structureStart = found.structure.value().generate(
+                    found.structure,
+                    net.minecraft.world.level.Level.NETHER,
+                    context.worldgenLoadContext(),
+                    generator,
+                    generator.getBiomeSource(),
+                    randomState,
+                    templateManager,
+                    seed,
+                    found.chunk,
+                    0,
+                    height,
+                    holder -> true);
+            if (cancelled.getAsBoolean()) {
+                return StructureGenerationInspectionResult.unavailable(seed,
+                        "Cancelled after Nether generation");
+            }
+            var bounds = structureStart.getPieces().stream()
+                    .map(piece -> piece.getBoundingBox()).toList();
+            return new StructureGenerationInspectionResult(
+                    seed, "minecraft:the_nether/" + found.structureKey(), found.chunk,
+                    structureStart.getBoundingBox(), bounds.size(), bounds,
+                    (System.nanoTime() - started) / 1_000_000L,
+                    structureStart.isValid() && !bounds.isEmpty(), "");
+        } catch (RuntimeException failure) {
+            return StructureGenerationInspectionResult.unavailable(seed,
+                    "Vanilla Nether generation failed: " + failure.getClass().getSimpleName());
         }
     }
 
@@ -268,11 +344,43 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                         bestStructureKey = matchingStructureKey(set, tokens);
                         bestStructure = matchingStructure(set, tokens);
                     }
+
                 }
             }
         }
         return best == null || bestStructure == null
                 ? null : new ChunkCandidate(best, bestStructureKey, bestStructure);
+    }
+
+    private ChunkCandidate findStructureByTokens(
+            ChunkGeneratorStructureState state,
+            String[] tokens,
+            int radius
+    ) {
+        ChunkCandidate best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (Holder<StructureSet> holder : state.possibleStructureSets()) {
+            if (holder.unwrapKey().isEmpty()) continue;
+            String setName = holder.unwrapKey().orElseThrow().identifier()
+                    .getPath().toLowerCase(Locale.ROOT);
+            if (!java.util.Arrays.stream(tokens).anyMatch(setName::contains)) continue;
+            var set = holder.value();
+            for (int x = -radius; x <= radius; x++) {
+                for (int z = -radius; z <= radius; z++) {
+                    if (!set.placement().isStructureChunk(state, x, z)) continue;
+                    double distance = Math.hypot(x, z);
+                    if (distance < bestDistance) {
+                        var key = matchingStructureKey(set, tokens);
+                        var structure = matchingStructure(set, tokens);
+                        if (structure != null) {
+                            best = new ChunkCandidate(new ChunkPos(x, z), key, structure);
+                            bestDistance = distance;
+                        }
+                    }
+                }
+            }
+        }
+        return best;
     }
 
     private int radiusFor(StartType type, FilterProfile profile) {

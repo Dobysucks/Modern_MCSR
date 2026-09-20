@@ -36,8 +36,10 @@ public final class SeedSearchManager implements AutoCloseable {
                 var generator = new CandidateSeedGenerator(request.generatorSeed());
             long tested = 0;
             long rejected = 0;
+            long notVerified = 0;
             long filterPassed = 0;
             long completable = 0;
+            long started = System.nanoTime();
             for (long index = 0; index < request.maximumCandidates(); index++) {
                 if (cancelled.get() || Thread.currentThread().isInterrupted()) return;
                 while (paused.get() && !cancelled.get()) {
@@ -52,20 +54,23 @@ public final class SeedSearchManager implements AutoCloseable {
                 var evaluation = evaluator.evaluate(candidate, request);
                 tested++;
                 if (evaluation.decision() == SearchDecision.REJECTED) rejected++;
+                if (evaluation.decision() == SearchDecision.NOT_VERIFIED) notVerified++;
                 if (evaluation.decision() == SearchDecision.ACCEPTED) {
                     filterPassed++;
                     if (evaluation.reason().toLowerCase(java.util.Locale.ROOT).contains("completable")) {
                         completable++;
                     }
                     progressReporter.accept(new SeedSearchProgress(
-                            tested, rejected, filterPassed, completable,
-                            candidate, evaluation.reason()));
+                            tested, rejected, notVerified, filterPassed, completable,
+                            candidate, evaluation.reason(),
+                            (System.nanoTime() - started) / 1_000_000L));
                     acceptedSeedReporter.accept(candidate);
                     return;
                 }
                 progressReporter.accept(new SeedSearchProgress(
-                        tested, rejected, filterPassed, completable,
-                        candidate, evaluation.reason()));
+                        tested, rejected, notVerified, filterPassed, completable,
+                        candidate, evaluation.reason(),
+                        (System.nanoTime() - started) / 1_000_000L));
             }
         });
         return new SeedSearchHandle(cancelled, paused, future);
