@@ -3,6 +3,8 @@ package dev.fsg262.client.world;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 
+import java.util.List;
+
 /**
  * Evidence produced by the vanilla structure-placement stage.
  *
@@ -15,10 +17,18 @@ public record StructurePlacementInspection(
         ChunkPos chunk,
         BoundingBox placementBounds,
         boolean generatedPiecesVerified,
-        String limitation
+        String limitation,
+        int pieceCount,
+        List<BoundingBox> pieceBounds,
+        long generationTimeMillis
 ) {
+    public StructurePlacementInspection {
+        pieceBounds = List.copyOf(pieceBounds);
+    }
+
     public static StructurePlacementInspection unverified() {
         return new StructurePlacementInspection(
-                false, "", null, null, false, "No matching vanilla placement was found");
+                false, "", null, null, false, "No matching vanilla placement was found",
+                0, List.of(), 0);
     }
 }

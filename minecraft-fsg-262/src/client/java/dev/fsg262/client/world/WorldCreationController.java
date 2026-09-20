@@ -10,6 +10,8 @@ import dev.fsg262.search.SeedSearchManager;
 import dev.fsg262.search.SeedSearchProgress;
 import dev.fsg262.search.SeedSearchRequest;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 import java.io.IOException;
@@ -87,8 +89,14 @@ public final class WorldCreationController implements AutoCloseable {
         cancel();
         var currentSettings = settings;
         var profile = profile(currentSettings.profileName());
+        var worldgenContext = screen.getUiState().getSettings();
+        var templateManager = new StructureTemplateManager(
+                Minecraft.getInstance().getResourceManager(),
+                null,
+                Minecraft.getInstance().getFixerUpper(),
+                worldgenContext.worldgenLoadContext().lookupOrThrow(Registries.BLOCK));
         var localFilter = new LocalSeedFilter(
-                new Minecraft26WorldgenAnalyzer(screen.getUiState().getSettings()));
+                new Minecraft26WorldgenAnalyzer(worldgenContext, templateManager));
         var request = new SeedSearchRequest(
                 screen.getUiState().getSeed().hashCode(),
                 currentSettings.seedType(), profile, 100_000);

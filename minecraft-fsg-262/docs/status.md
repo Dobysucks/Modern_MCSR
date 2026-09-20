@@ -31,6 +31,12 @@
 - The 26.2 adapter now bounds placement searches by the selected profile,
   records the matching vanilla structure key, exposes placement evidence, and
   records placement/terrain/total analysis timings.
+- The Village path now invokes the real 26.2 `Structure.generate` API with
+  the selected vanilla Village holder, `Level.OVERWORLD`, the active
+  `RegistryAccess`, generator, seed-derived `RandomState`, and a vanilla
+  `StructureTemplateManager`. When template loading succeeds, the adapter
+  records the actual `StructureStart`, piece count, structure bounds, and
+  piece bounding boxes with generation timing.
 - MCSR configuration is integrated as a fourth native Create New World tab
   beside the vanilla Game, World, and More tabs. Settings are shared through
   `WorldCreationController` and persisted to the client config file; no
@@ -53,8 +59,8 @@ intentionally reports
 `NOT VERIFIED` for seed search because the current world-generation adapter is
 not yet capable of exact generated structure pieces, loot, block entities,
 Nether route, or natural lava inspection. Placement evidence is not promoted
-to generated-piece evidence. No candidate can be accepted from incomplete
-evidence.
+to filter acceptance; Village structure-start/piece evidence is now exposed
+for the debug path, but no candidate can be accepted from incomplete evidence.
 The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real

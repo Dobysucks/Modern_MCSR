@@ -19,9 +19,14 @@ import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
 
 import java.util.Locale;
+import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * Read-only seed analysis over the same vanilla registries and dimension
@@ -31,11 +36,20 @@ import java.util.Locale;
  */
 public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer {
     private final WorldCreationContext context;
+    private final StructureTemplateManager templateManager;
     private volatile WorldgenAnalysisMetrics lastMetrics = WorldgenAnalysisMetrics.empty();
     private volatile StructurePlacementInspection lastInspection = StructurePlacementInspection.unverified();
+    private volatile VillageStructureInspectionResult lastVillageInspection =
+            VillageStructureInspectionResult.unavailable(0, "Not inspected");
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
+        this(context, null);
+    }
+
+    public Minecraft26WorldgenAnalyzer(WorldCreationContext context,
+                                       StructureTemplateManager templateManager) {
         this.context = context;
+        this.templateManager = templateManager;
     }
 
     @Override
@@ -63,6 +77,10 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             return unverified(seed, startType);
         }
 
+        if (startType == StartType.VILLAGE) {
+            inspectVillage(seed, generator, randomState, found, stem, () -> false);
+        }
+
         var type = stem.type().value();
         var height = LevelHeightAccessor.create(type.minY(), type.height());
         long terrainStart = System.nanoTime();
@@ -77,8 +95,13 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
         double distance = Math.hypot(found.x(), found.z());
         lastInspection = new StructurePlacementInspection(
-                true, found.structureKey(), found.chunk(), null, false,
-                "StructureStart/pieces require a WorldGenLevel and template manager");
+                true, found.structureKey(), found.chunk(),
+                lastVillageInspection.structureBounds(),
+                lastVillageInspection.verified(),
+                lastVillageInspection.verified()
+                        ? "" : lastVillageInspection.failureReason(),
+                lastVillageInspection.pieceCount(), lastVillageInspection.pieceBounds(),
+                lastVillageInspection.generationTimeMillis());
         recordMetrics(placementMillis, System.nanoTime() - terrainStart,
                 System.nanoTime() - totalStart);
         return new StartEvaluationInput(
@@ -107,6 +130,36 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         return lastInspection;
     }
 
+    public VillageStructureInspectionResult lastVillageInspection() {
+        return lastVillageInspection;
+    }
+
+    public VillageStructureInspectionResult inspectVillage(
+            long seed,
+            FilterProfile profile,
+            BooleanSupplier cancelled
+    ) {
+        if (cancelled.getAsBoolean()) {
+            return VillageStructureInspectionResult.unavailable(seed, "Cancelled before inspection");
+        }
+        var stem = context.selectedDimensions().get(LevelStem.OVERWORLD)
+                .orElseThrow(() -> new IllegalStateException("Overworld dimension is unavailable"));
+        if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
+            return VillageStructureInspectionResult.unavailable(seed, "Overworld is not noise-based");
+        }
+        var randomState = RandomState.create(context.worldgenLoadContext(),
+                generator.generatorSettings().unwrapKey()
+                        .orElse(NoiseGeneratorSettings.OVERWORLD), seed);
+        var structureState = generator.createState(
+                context.worldgenLoadContext().lookupOrThrow(Registries.STRUCTURE_SET),
+                randomState, seed);
+        var found = findStructure(structureState, StartType.VILLAGE, profile);
+        if (found == null) {
+            return VillageStructureInspectionResult.unavailable(seed, "No village placement found");
+        }
+        return inspectVillage(seed, generator, randomState, found, stem, cancelled);
+    }
+
     private ChunkCandidate findStructure(
             ChunkGeneratorStructureState state,
             StartType type,
@@ -121,6 +174,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         };
         ChunkPos best = null;
         String bestStructureKey = "";
+        Holder<Structure> bestStructure = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (Holder<StructureSet> holder : state.possibleStructureSets()) {
             if (holder.unwrapKey().isEmpty()) continue;
@@ -140,11 +194,13 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                         best = candidate;
                         bestDistance = distance;
                         bestStructureKey = matchingStructureKey(set, tokens);
+                        bestStructure = matchingStructure(set, tokens);
                     }
                 }
             }
         }
-        return best == null ? null : new ChunkCandidate(best, bestStructureKey);
+        return best == null || bestStructure == null
+                ? null : new ChunkCandidate(best, bestStructureKey, bestStructure);
     }
 
     private int radiusFor(StartType type, FilterProfile profile) {
@@ -165,6 +221,74 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                         .anyMatch(token -> key.toLowerCase(Locale.ROOT).contains(token)))
                 .findFirst()
                 .orElse("unknown");
+    }
+
+    private Holder<Structure> matchingStructure(StructureSet set, String[] tokens) {
+        return set.structures().stream()
+                .map(entry -> entry.structure())
+                .filter(holder -> holder.unwrapKey().isPresent()
+                        && java.util.Arrays.stream(tokens).anyMatch(token ->
+                        holder.unwrapKey().orElseThrow().identifier().getPath()
+                                .toLowerCase(Locale.ROOT).contains(token)))
+                .findFirst().orElse(null);
+    }
+
+    private VillageStructureInspectionResult inspectVillage(
+            long seed,
+            ChunkGenerator generator,
+            RandomState randomState,
+            ChunkCandidate found,
+            LevelStem stem,
+            BooleanSupplier cancelled
+    ) {
+        if (templateManager == null) {
+            var result = VillageStructureInspectionResult.unavailable(
+                    seed, "No vanilla StructureTemplateManager was supplied");
+            lastVillageInspection = result;
+            return result;
+        }
+        if (cancelled.getAsBoolean()) {
+            var result = VillageStructureInspectionResult.unavailable(seed, "Cancelled before generation");
+            lastVillageInspection = result;
+            return result;
+        }
+        long started = System.nanoTime();
+        StructureStart start;
+        try {
+            var height = LevelHeightAccessor.create(stem.type().value().minY(),
+                    stem.type().value().height());
+            start = found.structure.value().generate(
+                    found.structure,
+                    net.minecraft.world.level.Level.OVERWORLD,
+                    context.worldgenLoadContext(),
+                    generator,
+                    generator.getBiomeSource(),
+                    randomState,
+                    templateManager,
+                    seed,
+                    found.chunk,
+                    0,
+                    height,
+                    holder -> true);
+        } catch (RuntimeException failure) {
+            var result = VillageStructureInspectionResult.unavailable(
+                    seed, "Vanilla village generation failed: " + failure.getClass().getSimpleName());
+            lastVillageInspection = result;
+            return result;
+        }
+        if (cancelled.getAsBoolean()) {
+            var result = VillageStructureInspectionResult.unavailable(seed, "Cancelled after generation");
+            lastVillageInspection = result;
+            return result;
+        }
+        var pieces = start.getPieces();
+        var bounds = pieces.stream().map(piece -> piece.getBoundingBox()).toList();
+        var result = new VillageStructureInspectionResult(seed, found.chunk,
+                start.getBoundingBox(), pieces.size(), bounds,
+                (System.nanoTime() - started) / 1_000_000L,
+                start.isValid() && !pieces.isEmpty(), "");
+        lastVillageInspection = result;
+        return result;
     }
 
     private boolean biomeMatchesNearby(
@@ -200,7 +324,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                 totalNanos / 1_000_000L);
     }
 
-    private record ChunkCandidate(ChunkPos chunk, String structureKey) {
+    private record ChunkCandidate(ChunkPos chunk, String structureKey, Holder<Structure> structure) {
         int x() {
             return chunk.x();
         }
