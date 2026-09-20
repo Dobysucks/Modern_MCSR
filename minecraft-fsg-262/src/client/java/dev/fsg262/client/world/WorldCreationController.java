@@ -12,6 +12,7 @@ import dev.fsg262.search.SeedSearchHandle;
 import dev.fsg262.search.SeedSearchManager;
 import dev.fsg262.search.SeedSearchProgress;
 import dev.fsg262.search.SeedSearchRequest;
+import dev.fsg262.loot.ChestLootInjectionState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
@@ -48,6 +49,7 @@ public final class WorldCreationController implements AutoCloseable {
 
     public void updateSettings(WorldCreationSettings settings) {
         this.settings = settings;
+        ChestLootInjectionState.disable();
         saveSettings(settings);
     }
 
@@ -84,6 +86,7 @@ public final class WorldCreationController implements AutoCloseable {
         var current = activeSearch.getAndSet(null);
         if (current != null) current.cancel();
         acceptedSeed.set(null);
+        ChestLootInjectionState.disable();
         status = "Stopped";
     }
 
@@ -117,6 +120,9 @@ public final class WorldCreationController implements AutoCloseable {
         };
         var handle = searchManager.search(request, evaluator, progressReporter, seed -> {
             acceptedSeed.set(seed);
+            if (currentSettings.enabled()) {
+                ChestLootInjectionState.enable(seed, configurationKey(currentSettings));
+            }
             screen.getUiState().setSeed(Long.toString(seed));
             lastEvaluation = new EvaluatorOrchestrator(analyzer, analyzer)
                     .evaluate(seed, profile);
@@ -131,6 +137,12 @@ public final class WorldCreationController implements AutoCloseable {
         activeSearch.set(handle);
         status = "Searching";
         statusReporter.accept("Searching for " + currentSettings.seedType().name() + "...");
+    }
+
+    private String configurationKey(WorldCreationSettings value) {
+        return value.seedType().name() + "|" + value.profileName() + "|"
+                + value.completable() + "|" + value.standardizedRng() + "|"
+                + value.rngSeed(0L);
     }
 
     public void requireAcceptedSeed(CreateWorldScreen screen) {

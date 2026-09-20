@@ -20,10 +20,16 @@ public record DeterministicStartingLoot(
     }
 
     public static DeterministicStartingLoot forSeed(long seed, StartType type) {
+        var category = DeterministicChestLoot.StructureCategory.valueOf(type.name());
+        var entries = DeterministicChestLoot.forEvaluation(seed, category);
+        int iron = entries.stream().filter(entry -> entry.item().equals("minecraft:iron_ingot"))
+                .mapToInt(DeterministicChestLoot.Entry::count).sum();
+        int obsidian = entries.stream().filter(entry -> entry.item().equals("minecraft:obsidian"))
+                .mapToInt(DeterministicChestLoot.Entry::count).sum();
+        boolean food = entries.stream().anyMatch(entry -> entry.item().equals("minecraft:bread"));
         long mixed = seed ^ ((long) type.ordinal() * 0x9E3779B97F4A7C15L);
         return new DeterministicStartingLoot(
-                7 + (int) Math.floorMod(mixed, 3),
-                3 + (int) Math.floorMod(mixed >>> 8, 2),
-                true, true, 10, true, 8, true, EvidenceType.SIMULATED);
+                iron, 3 + (int) Math.floorMod(mixed >>> 8, 2),
+                food, true, obsidian, true, 8, true, EvidenceType.SIMULATED);
     }
 }
