@@ -29,6 +29,25 @@ seed
   -> pure FilterProfile evaluation
 ```
 
+## Bounded real chunk harness
+
+`RealChunkGenerationHarness` is the concrete 26.2 adapter for bounded
+inspection. It allocates vanilla `ProtoChunk` instances and calls the selected
+`ChunkGenerator`'s `createBiomes` and `fillFromNoise` methods, so block states,
+fluid states, heightmaps and biome data are produced by the real generator.
+When a `StructureTemplateManager` is available it also invokes vanilla
+`Structure.generate` for every structure whose placement selects the requested
+chunk and exposes the resulting `StructureStart` values.
+
+The result retains the `ChunkAccess` and reports each later stage explicitly.
+Template block placement, generated block entities, lighting and conversion to
+`LevelChunk` are unavailable because those operations require a live
+`WorldGenRegion`/`ServerLevel`; the harness does not fabricate those objects.
+This keeps the unsupported boundary precise while making terrain and structure
+start evidence usable by callers. The harness is intentionally bounded by the
+caller selecting individual `ChunkPos` values rather than bootstrapping a
+persistent server or touching Create World UI code.
+
 ## 26.2 compatibility surface
 
 The build uses the official Fabric 26.2 template values:

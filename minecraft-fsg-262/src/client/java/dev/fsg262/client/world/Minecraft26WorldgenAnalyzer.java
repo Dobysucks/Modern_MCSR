@@ -41,6 +41,7 @@ import java.util.function.BooleanSupplier;
 public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer {
     private final WorldCreationContext context;
     private final StructureTemplateManager templateManager;
+    private final RealChunkGenerationHarness generationHarness;
     private volatile WorldgenAnalysisMetrics lastMetrics = WorldgenAnalysisMetrics.empty();
     private volatile StructurePlacementInspection lastInspection = StructurePlacementInspection.unverified();
     private volatile VillageStructureInspectionResult lastVillageInspection =
@@ -58,6 +59,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                                        StructureTemplateManager templateManager) {
         this.context = context;
         this.templateManager = templateManager;
+        this.generationHarness = new RealChunkGenerationHarness(context, templateManager);
     }
 
     @Override
@@ -170,26 +172,21 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         var stemKey = nether ? LevelStem.NETHER : LevelStem.OVERWORLD;
         var stem = context.selectedDimensions().get(stemKey)
                 .orElseThrow(() -> new IllegalStateException("Dimension is unavailable"));
-        if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
+        if (!(stem.generator() instanceof NoiseBasedChunkGenerator)) {
             return GeneratedBlockSummary.unavailable("Dimension is not noise-based");
         }
-        var settings = generator.generatorSettings().unwrapKey().orElse(
-                nether ? NoiseGeneratorSettings.NETHER : NoiseGeneratorSettings.OVERWORLD);
-        var randomState = RandomState.create(context.worldgenLoadContext(), settings, seed);
         var type = stem.type().value();
-        var height = LevelHeightAccessor.create(type.minY(), type.height());
-        var factory = PalettedContainerFactory.create(context.worldgenLoadContext());
-        var chunk = new ProtoChunk(chunkPos, UpgradeData.EMPTY, height, factory, null);
         try {
-            generator.createBiomes(randomState, Blender.empty(), null, chunk).join();
-            if (cancelled.getAsBoolean()) {
-                return GeneratedBlockSummary.unavailable("Cancelled after biome generation");
+            var generated = nether
+                    ? generationHarness.generateNether(seed, chunkPos, cancelled)
+                    : generationHarness.generateOverworld(seed, chunkPos, cancelled);
+            if (generated.chunk() == null
+                    || !generated.stage(GenerationStage.TERRAIN).available()) {
+                return GeneratedBlockSummary.unavailable(
+                        generated.stage(GenerationStage.TERRAIN).detail());
             }
-            generator.fillFromNoise(Blender.empty(), randomState, null, chunk).join();
-            if (cancelled.getAsBoolean()) {
-                return GeneratedBlockSummary.unavailable("Cancelled after terrain generation");
-            }
-            return GeneratedWorldInspector.inspect(chunk, type.minY(), type.minY() + type.height());
+            return GeneratedWorldInspector.inspect(generated.chunk(), type.minY(),
+                    type.minY() + type.height());
         } catch (RuntimeException failure) {
             return GeneratedBlockSummary.unavailable(
                     "Vanilla terrain generation failed: " + failure.getClass().getSimpleName());

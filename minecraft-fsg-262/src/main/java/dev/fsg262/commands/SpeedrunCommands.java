@@ -4,8 +4,10 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import dev.fsg262.config.FsgConfig;
+import dev.fsg262.evaluation.EvaluatorOrchestrator;
 import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.filter.SeedFilter;
+import dev.fsg262.filter.UnverifiedWorldGenerationAnalyzer;
 import dev.fsg262.rng.LegacyPiglinBartering;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -15,6 +17,11 @@ public final class SpeedrunCommands {
     private SpeedrunCommands() {}
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("mcsr")
+                .then(Commands.literal("debug")
+                        .then(Commands.literal("analyze")
+                                .then(Commands.argument("seed", LongArgumentType.longArg())
+                                        .executes(SpeedrunCommands::analyze)))));
         dispatcher.register(Commands.literal("speedrun")
                 .then(Commands.literal("version").executes(SpeedrunCommands::version))
                 .then(Commands.literal("config").executes(SpeedrunCommands::config))
@@ -54,6 +61,13 @@ public final class SpeedrunCommands {
     private static int seedInfo(CommandContext<CommandSourceStack> context) {
         long seed = LongArgumentType.getLong(context, "seed");
         return reply(context, "Seed " + seed + " · structure adapter status: TODO — NEEDS VERIFICATION");
+    }
+
+    private static int analyze(CommandContext<CommandSourceStack> context) {
+        long seed = LongArgumentType.getLong(context, "seed");
+        var result = new EvaluatorOrchestrator(new UnverifiedWorldGenerationAnalyzer())
+                .evaluate(seed, FilterProfile.strictRankedStyle());
+        return reply(context, result.report());
     }
 
     private static int filter(CommandContext<CommandSourceStack> context) {

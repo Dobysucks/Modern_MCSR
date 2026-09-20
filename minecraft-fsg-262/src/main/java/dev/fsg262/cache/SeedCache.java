@@ -16,7 +16,7 @@ import java.util.Optional;
  * contain spaces or punctuation without corrupting the file.
  */
 public final class SeedCache {
-    public static final String FILTER_VERSION = "26.2-ranked-adapted-v1";
+    public static final String FILTER_VERSION = "26.2-ranked-adapted-v2";
     public static final String MINECRAFT_VERSION = "26.2";
     private final Map<SeedCacheKey, CachedSeed> entries = new LinkedHashMap<>();
 
@@ -77,12 +77,15 @@ public final class SeedCache {
                 b64(entry.overworldSummary()),
                 b64(entry.netherSummary()),
                 b64(entry.strongholdSummary()),
+                b64(entry.failureReason()),
+                b64(entry.evidenceSummary()),
+                Long.toString(entry.analysisTimeMillis()),
                 entry.timestamp().toString());
     }
 
     private CachedSeed decode(String line) {
         var parts = line.split("\t", -1);
-        if (parts.length != 13) throw new IllegalArgumentException("Invalid FSG seed cache row");
+        if (parts.length != 16) throw new IllegalArgumentException("Invalid FSG seed cache row");
         var key = new SeedCacheKey(Long.parseLong(parts[0]),
                 dev.fsg262.filter.SeedTypeChoice.valueOf(parts[1]),
                 unb64(parts[2]), Long.parseLong(parts[3]), unb64(parts[4]), unb64(parts[5]));
@@ -91,7 +94,8 @@ public final class SeedCache {
                 dev.fsg262.completion.VerificationStatus.valueOf(parts[7]),
                 dev.fsg262.completion.VerificationStatus.valueOf(parts[8]),
                 unb64(parts[9]), unb64(parts[10]), unb64(parts[11]),
-                Instant.parse(parts[12]));
+                unb64(parts[12]), unb64(parts[13]), Long.parseLong(parts[14]),
+                Instant.parse(parts[15]));
     }
 
     private String b64(String value) {
