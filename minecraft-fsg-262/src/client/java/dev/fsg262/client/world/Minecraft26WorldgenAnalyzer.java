@@ -20,8 +20,6 @@ import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
-import net.minecraft.world.level.levelgen.structure.StructureSet.StructureSelectionEntry;
-import net.minecraft.resources.ResourceKey;
 
 import java.util.Locale;
 
@@ -33,6 +31,8 @@ import java.util.Locale;
  */
 public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer {
     private final WorldCreationContext context;
+    private volatile WorldgenAnalysisMetrics lastMetrics = WorldgenAnalysisMetrics.empty();
+    private volatile StructurePlacementInspection lastInspection = StructurePlacementInspection.unverified();
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
         this.context = context;
@@ -40,10 +40,12 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
     @Override
     public StartEvaluationInput analyzeOverworld(long seed, StartType startType, FilterProfile profile) {
+        long totalStart = System.nanoTime();
         var stem = context.selectedDimensions().get(LevelStem.OVERWORLD)
                 .orElseThrow(() -> new IllegalStateException("Overworld dimension is unavailable"));
         ChunkGenerator generator = stem.generator();
         if (!(generator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
+            recordMetrics(0, 0, 0);
             return unverified(seed, startType);
         }
 
@@ -52,11 +54,18 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                         .orElse(NoiseGeneratorSettings.OVERWORLD), seed);
         var structureSets = context.worldgenLoadContext().lookupOrThrow(Registries.STRUCTURE_SET);
         var structureState = generator.createState(structureSets, randomState, seed);
-        var found = findStructure(structureState, startType, seed);
-        if (found == null) return unverified(seed, startType);
+        long placementStart = System.nanoTime();
+        var found = findStructure(structureState, startType, profile);
+        long placementMillis = (System.nanoTime() - placementStart) / 1_000_000L;
+        if (found == null) {
+            lastInspection = StructurePlacementInspection.unverified();
+            recordMetrics(placementMillis, 0, System.nanoTime() - totalStart);
+            return unverified(seed, startType);
+        }
 
         var type = stem.type().value();
         var height = LevelHeightAccessor.create(type.minY(), type.height());
+        long terrainStart = System.nanoTime();
         int surface = generator.getBaseHeight(found.getMiddleBlockX(), found.getMiddleBlockZ(),
                 Heightmap.Types.WORLD_SURFACE_WG, height, randomState);
         var biome = generator.getBiomeSource().getNoiseBiome(
@@ -67,6 +76,11 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                 found.getMiddleBlockX(), surface, found.getMiddleBlockZ(), "river");
 
         double distance = Math.hypot(found.x(), found.z());
+        lastInspection = new StructurePlacementInspection(
+                true, found.structureKey(), found.chunk(), null, false,
+                "StructureStart/pieces require a WorldGenLevel and template manager");
+        recordMetrics(placementMillis, System.nanoTime() - terrainStart,
+                System.nanoTime() - totalStart);
         return new StartEvaluationInput(
                 seed, startType, distance,
                 0, 0, false, riverNearby ? 0 : Double.POSITIVE_INFINITY,
@@ -85,10 +99,18 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         return false;
     }
 
-    private ChunkPos findStructure(
+    public WorldgenAnalysisMetrics lastMetrics() {
+        return lastMetrics;
+    }
+
+    public StructurePlacementInspection lastInspection() {
+        return lastInspection;
+    }
+
+    private ChunkCandidate findStructure(
             ChunkGeneratorStructureState state,
             StartType type,
-            long seed
+            FilterProfile profile
     ) {
         String[] tokens = switch (type) {
             case VILLAGE -> new String[]{"village"};
@@ -98,6 +120,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             case BURIED_TREASURE -> new String[]{"buried_treasure"};
         };
         ChunkPos best = null;
+        String bestStructureKey = "";
         double bestDistance = Double.POSITIVE_INFINITY;
         for (Holder<StructureSet> holder : state.possibleStructureSets()) {
             if (holder.unwrapKey().isEmpty()) continue;
@@ -107,19 +130,41 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             if (!matches) continue;
             StructureSet set = holder.value();
             StructurePlacement placement = set.placement();
-            for (int x = -32; x <= 32; x++) {
-                for (int z = -32; z <= 32; z++) {
+            int radius = radiusFor(type, profile);
+            for (int x = -radius; x <= radius; x++) {
+                for (int z = -radius; z <= radius; z++) {
                     if (!placement.isStructureChunk(state, x, z)) continue;
                     var candidate = new ChunkPos(x, z);
                     double distance = Math.hypot(candidate.x(), candidate.z());
                     if (distance < bestDistance) {
                         best = candidate;
                         bestDistance = distance;
+                        bestStructureKey = matchingStructureKey(set, tokens);
                     }
                 }
             }
         }
-        return best;
+        return best == null ? null : new ChunkCandidate(best, bestStructureKey);
+    }
+
+    private int radiusFor(StartType type, FilterProfile profile) {
+        return switch (type) {
+            case VILLAGE -> profile.villageMaxDistanceChunks();
+            case SHIPWRECK -> profile.shipwreckMaxDistanceChunks();
+            case DESERT_TEMPLE -> profile.desertTempleMaxDistanceChunks();
+            case RUINED_PORTAL -> profile.ruinedPortalMaxDistanceChunks();
+            case BURIED_TREASURE -> profile.buriedTreasureMaxDistanceChunks();
+        };
+    }
+
+    private String matchingStructureKey(StructureSet set, String[] tokens) {
+        return set.structures().stream()
+                .map(entry -> entry.structure().unwrapKey()
+                        .map(key -> key.identifier().toString()).orElse("unknown"))
+                .filter(key -> java.util.Arrays.stream(tokens)
+                        .anyMatch(token -> key.toLowerCase(Locale.ROOT).contains(token)))
+                .findFirst()
+                .orElse("unknown");
     }
 
     private boolean biomeMatchesNearby(
@@ -147,5 +192,29 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         return new StartEvaluationInput(seed, type, Double.POSITIVE_INFINITY,
                 0, 0, false, Double.POSITIVE_INFINITY, 0, false, 0,
                 false, false, 0, 0, false, false, false, false, false);
+    }
+
+    private void recordMetrics(long placementMillis, long terrainNanos, long totalNanos) {
+        lastMetrics = new WorldgenAnalysisMetrics(
+                placementMillis, terrainNanos / 1_000_000L, 0, 0, 0, 0,
+                totalNanos / 1_000_000L);
+    }
+
+    private record ChunkCandidate(ChunkPos chunk, String structureKey) {
+        int x() {
+            return chunk.x();
+        }
+
+        int z() {
+            return chunk.z();
+        }
+
+        int getMiddleBlockX() {
+            return chunk.getMiddleBlockX();
+        }
+
+        int getMiddleBlockZ() {
+            return chunk.getMiddleBlockZ();
+        }
     }
 }

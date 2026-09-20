@@ -28,6 +28,9 @@
   registries, dimension generator, `RandomState`, structure placement state,
   biome source, and base-height queries for all five structure categories.
 - Cache reads and writes now reject incompatible filter or Minecraft versions.
+- The 26.2 adapter now bounds placement searches by the selected profile,
+  records the matching vanilla structure key, exposes placement evidence, and
+  records placement/terrain/total analysis timings.
 
 ## Verified boundary and remaining work
 
@@ -45,8 +48,9 @@ and terrain queries against the selected Create New World context, but still
 intentionally reports
 `NOT VERIFIED` for seed search because the current world-generation adapter is
 not yet capable of exact generated structure pieces, loot, block entities,
-Nether route, or natural lava inspection. No candidate can be accepted from
-incomplete evidence.
+Nether route, or natural lava inspection. Placement evidence is not promoted
+to generated-piece evidence. No candidate can be accepted from incomplete
+evidence.
 The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
