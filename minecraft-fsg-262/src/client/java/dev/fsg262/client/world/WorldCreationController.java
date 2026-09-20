@@ -21,8 +21,6 @@ import java.util.function.Consumer;
 public final class WorldCreationController implements AutoCloseable {
     private static final WorldCreationController INSTANCE = new WorldCreationController();
     private final SeedSearchManager searchManager = new SeedSearchManager();
-    private final LocalSeedFilter localFilter =
-            new LocalSeedFilter(new dev.fsg262.filter.UnverifiedWorldGenerationAnalyzer());
     private final AtomicReference<SeedSearchHandle> activeSearch = new AtomicReference<>();
     private final AtomicReference<Long> acceptedSeed = new AtomicReference<>();
     private volatile WorldCreationSettings settings = WorldCreationSettings.defaults();
@@ -70,6 +68,8 @@ public final class WorldCreationController implements AutoCloseable {
         cancel();
         var currentSettings = settings;
         var profile = FilterProfile.strictRankedStyle();
+        var localFilter = new LocalSeedFilter(
+                new Minecraft26WorldgenAnalyzer(screen.getUiState().getSettings()));
         var request = new SeedSearchRequest(
                 screen.getUiState().getSeed().hashCode(),
                 currentSettings.seedType(), profile, 100_000);

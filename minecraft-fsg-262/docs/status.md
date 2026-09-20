@@ -24,6 +24,9 @@
 - A shared local five-type filter pipeline now evaluates Overworld facts,
   standardized bartering, and Completable evidence with PASS/FAIL/NOT_VERIFIED
   propagation.
+- A Minecraft 26.2 client-side analyzer now uses the Create New World
+  registries, dimension generator, `RandomState`, structure placement state,
+  biome source, and base-height queries for all five structure categories.
 - Cache reads and writes now reject incompatible filter or Minecraft versions.
 
 ## Verified boundary and remaining work
@@ -37,9 +40,13 @@
 5. Add verified, narrow mixins for standardized drops and golem/barter behavior.
 
 The local evaluator is wired into the Create New World search for all five seed
-types and performs no network access. It intentionally reports
+types and performs no network access. It now performs real placement, biome,
+and terrain queries against the selected Create New World context, but still
+intentionally reports
 `NOT VERIFIED` for seed search because the current world-generation adapter is
-still a sentinel; no candidate can be accepted from fabricated structure data.
+not yet capable of exact generated structure pieces, loot, block entities,
+Nether route, or natural lava inspection. No candidate can be accepted from
+incomplete evidence.
 The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
