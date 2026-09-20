@@ -40,8 +40,8 @@ The build uses the official Fabric 26.2 template values:
 - Mojang mappings (Yarn is not used for 26.1+)
 - Java `25`
 
-The Fabric entrypoint, command callback, client screen, and screen accessor are
-the game-facing code in the current slice. The following adapter work is
+The Fabric entrypoint, command callback, Create New World controls, and screen
+accessor are the game-facing code in the current slice. The following adapter work is
 deliberately isolated and must be implemented against locally resolved 26.2
 names before merging:
 

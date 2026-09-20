@@ -15,10 +15,12 @@
 - Seed record model and JSON schema.
 - All current unit tests, `./gradlew test`, and `./gradlew build`.
 - Initial `/speedrun` command tree.
-- Client-only FSG settings screen with title-screen entry button.
+- Client-only FSG controls embedded in the Create New World screen.
 - Pausable/resumable background search handle and versioned cache constants.
 - Deterministic natural-lava qualification and exactly-three fallback planner
   tests.
+- Native Create New World controls and an exact-seed handoff gate; the former
+  Atum abstraction has been removed.
 
 ## Verified boundary and remaining work
 
@@ -26,10 +28,11 @@
 2. Implement `WorldGenerationAnalyzer` using placement, generation, loot, and
    terrain APIs without full-world loading.
 3. Add intended-structure candidate provenance and real seed reports.
-4. Connect the screen's controls to a persistent config and search coordinator.
+4. Persist Create New World settings across screen instances and connect the
+   coordinator to a verified 26.2 world-generation evaluator.
 5. Add verified, narrow mixins for standardized drops and golem/barter behavior.
 
-The client screen intentionally reports `NOT VERIFIED` and does not claim that
+The client screen intentionally reports `NOT VERIFIED` for seed search and does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
 adapter-supplied terrain candidates; it does not mutate playable chunks until a

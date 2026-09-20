@@ -2,7 +2,7 @@
   "required": true,
   "package": "dev.fsg262.mixin",
   "compatibilityLevel": "JAVA_25",
-  "client": ["FsgScreenAccess"],
+  "client": ["FsgScreenAccess", "CreateWorldScreenMixin"],
   "injectors": {
     "defaultRequire": 1
   }
