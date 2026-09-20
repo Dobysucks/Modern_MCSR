@@ -21,11 +21,12 @@ public final class SeedCache {
     private final Map<SeedCacheKey, CachedSeed> entries = new LinkedHashMap<>();
 
     public synchronized Optional<CachedSeed> get(SeedCacheKey key) {
+        if (!key.isCurrent()) return Optional.empty();
         return Optional.ofNullable(entries.get(key));
     }
 
     public synchronized void put(CachedSeed entry) {
-        entries.put(entry.key(), entry);
+        if (entry.key().isCurrent()) entries.put(entry.key(), entry);
     }
 
     public synchronized int size() {
@@ -46,7 +47,10 @@ public final class SeedCache {
     public synchronized void load(Path path) throws IOException {
         if (!Files.exists(path)) return;
         for (var line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-            if (!line.isBlank()) put(decode(line));
+            if (!line.isBlank()) {
+                var entry = decode(line);
+                if (entry.key().isCurrent()) put(entry);
+            }
         }
     }
 
@@ -65,6 +69,8 @@ public final class SeedCache {
                 key.seedType().name(),
                 b64(key.profileName()),
                 Long.toString(key.rngSeed()),
+                b64(key.filterVersion()),
+                b64(key.minecraftVersion()),
                 entry.filterResult().name(),
                 entry.completionResult().name(),
                 entry.lavaResult().name(),
@@ -76,16 +82,16 @@ public final class SeedCache {
 
     private CachedSeed decode(String line) {
         var parts = line.split("\t", -1);
-        if (parts.length != 11) throw new IllegalArgumentException("Invalid FSG seed cache row");
+        if (parts.length != 13) throw new IllegalArgumentException("Invalid FSG seed cache row");
         var key = new SeedCacheKey(Long.parseLong(parts[0]),
                 dev.fsg262.filter.SeedTypeChoice.valueOf(parts[1]),
-                unb64(parts[2]), Long.parseLong(parts[3]));
+                unb64(parts[2]), Long.parseLong(parts[3]), unb64(parts[4]), unb64(parts[5]));
         return new CachedSeed(key,
-                dev.fsg262.completion.VerificationStatus.valueOf(parts[4]),
-                dev.fsg262.completion.VerificationStatus.valueOf(parts[5]),
                 dev.fsg262.completion.VerificationStatus.valueOf(parts[6]),
-                unb64(parts[7]), unb64(parts[8]), unb64(parts[9]),
-                Instant.parse(parts[10]));
+                dev.fsg262.completion.VerificationStatus.valueOf(parts[7]),
+                dev.fsg262.completion.VerificationStatus.valueOf(parts[8]),
+                unb64(parts[9]), unb64(parts[10]), unb64(parts[11]),
+                Instant.parse(parts[12]));
     }
 
     private String b64(String value) {

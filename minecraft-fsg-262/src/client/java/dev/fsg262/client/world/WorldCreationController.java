@@ -2,6 +2,8 @@ package dev.fsg262.client.world;
 
 import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.search.CandidateEvaluation;
+import dev.fsg262.search.LocalFilterResult;
+import dev.fsg262.search.LocalSeedFilter;
 import dev.fsg262.search.SeedCandidateEvaluator;
 import dev.fsg262.search.SeedSearchHandle;
 import dev.fsg262.search.SeedSearchManager;
@@ -19,6 +21,8 @@ import java.util.function.Consumer;
 public final class WorldCreationController implements AutoCloseable {
     private static final WorldCreationController INSTANCE = new WorldCreationController();
     private final SeedSearchManager searchManager = new SeedSearchManager();
+    private final LocalSeedFilter localFilter =
+            new LocalSeedFilter(new dev.fsg262.filter.UnverifiedWorldGenerationAnalyzer());
     private final AtomicReference<SeedSearchHandle> activeSearch = new AtomicReference<>();
     private final AtomicReference<Long> acceptedSeed = new AtomicReference<>();
     private volatile WorldCreationSettings settings = WorldCreationSettings.defaults();
@@ -60,7 +64,6 @@ public final class WorldCreationController implements AutoCloseable {
 
     public void startSearch(
             CreateWorldScreen screen,
-            SeedCandidateEvaluator evaluator,
             Consumer<SeedSearchProgress> progressReporter,
             Consumer<String> statusReporter
     ) {
@@ -70,6 +73,16 @@ public final class WorldCreationController implements AutoCloseable {
         var request = new SeedSearchRequest(
                 screen.getUiState().getSeed().hashCode(),
                 currentSettings.seedType(), profile, 100_000);
+        SeedCandidateEvaluator evaluator = (candidate, ignored) -> {
+            LocalFilterResult result = localFilter.evaluate(candidate,
+                    currentSettings.rngSeed(candidate), currentSettings.seedType(),
+                    profile, currentSettings.completable());
+            return switch (result.status()) {
+                case PASS -> CandidateEvaluation.accepted(result.reason());
+                case FAIL -> CandidateEvaluation.rejected(result.reason());
+                case NOT_VERIFIED -> CandidateEvaluation.notVerified(result.reason());
+            };
+        };
         var handle = searchManager.search(request, evaluator, progressReporter, seed -> {
             acceptedSeed.set(seed);
             screen.getUiState().setSeed(Long.toString(seed));

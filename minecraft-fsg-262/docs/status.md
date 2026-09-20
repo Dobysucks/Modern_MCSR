@@ -21,6 +21,10 @@
   tests.
 - Native Create New World controls and an exact-seed handoff gate; the former
   Atum abstraction has been removed.
+- A shared local five-type filter pipeline now evaluates Overworld facts,
+  standardized bartering, and Completable evidence with PASS/FAIL/NOT_VERIFIED
+  propagation.
+- Cache reads and writes now reject incompatible filter or Minecraft versions.
 
 ## Verified boundary and remaining work
 
@@ -32,7 +36,11 @@
    coordinator to a verified 26.2 world-generation evaluator.
 5. Add verified, narrow mixins for standardized drops and golem/barter behavior.
 
-The client screen intentionally reports `NOT VERIFIED` for seed search and does not claim that
+The local evaluator is wired into the Create New World search for all five seed
+types and performs no network access. It intentionally reports
+`NOT VERIFIED` for seed search because the current world-generation adapter is
+still a sentinel; no candidate can be accepted from fabricated structure data.
+The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
 adapter-supplied terrain candidates; it does not mutate playable chunks until a

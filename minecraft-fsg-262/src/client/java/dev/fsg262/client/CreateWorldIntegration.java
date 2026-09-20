@@ -4,8 +4,6 @@ import dev.fsg262.client.world.WorldCreationController;
 import dev.fsg262.client.world.WorldCreationSettings;
 import dev.fsg262.filter.SeedTypeChoice;
 import dev.fsg262.mixin.FsgScreenAccess;
-import dev.fsg262.search.CandidateEvaluation;
-import dev.fsg262.search.SearchDecision;
 import dev.fsg262.search.SeedSearchProgress;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.Minecraft;
@@ -94,9 +92,7 @@ public final class CreateWorldIntegration {
     }
 
     private static void startSearch(CreateWorldScreen screen, Minecraft client) {
-        CONTROLLER.startSearch(screen, (candidate, request) ->
-                        CandidateEvaluation.notVerified(
-                                "World-generation adapter is NOT VERIFIED for Minecraft 26.2"),
+        CONTROLLER.startSearch(screen,
                 progress -> client.execute(() -> logProgress(progress)),
                 message -> client.execute(() -> System.out.println("[FSG] " + message)));
     }
