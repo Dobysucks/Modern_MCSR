@@ -9,4 +9,7 @@ public interface FsgScreenAccess {
     <T extends net.minecraft.client.gui.components.events.GuiEventListener
             & net.minecraft.client.gui.components.Renderable
             & net.minecraft.client.gui.narration.NarratableEntry> T fsg262$addWidget(T widget);
+
+    @Invoker("removeWidget")
+    void fsg262$removeWidget(net.minecraft.client.gui.components.events.GuiEventListener widget);
 }
