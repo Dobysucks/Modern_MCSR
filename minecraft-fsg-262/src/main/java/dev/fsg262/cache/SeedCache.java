@@ -16,6 +16,8 @@ import java.util.Optional;
  * contain spaces or punctuation without corrupting the file.
  */
 public final class SeedCache {
+    public static final String FILTER_VERSION = "26.2-ranked-adapted-v1";
+    public static final String MINECRAFT_VERSION = "26.2";
     private final Map<SeedCacheKey, CachedSeed> entries = new LinkedHashMap<>();
 
     public synchronized Optional<CachedSeed> get(SeedCacheKey key) {

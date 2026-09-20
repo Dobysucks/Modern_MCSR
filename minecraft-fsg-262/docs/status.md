@@ -15,15 +15,22 @@
 - Seed record model and JSON schema.
 - All current unit tests, `./gradlew test`, and `./gradlew build`.
 - Initial `/speedrun` command tree.
+- Client-only FSG settings screen with title-screen entry button.
+- Pausable/resumable background search handle and versioned cache constants.
+- Deterministic natural-lava qualification and exactly-three fallback planner
+  tests.
 
-## Next implementation slice
+## Verified boundary and remaining work
 
 1. Resolve exact 26.2 biome and structure APIs from the dependency sources.
 2. Implement `WorldGenerationAnalyzer` using placement, generation, loot, and
    terrain APIs without full-world loading.
 3. Add intended-structure candidate provenance and real seed reports.
-4. Add the config screen and persistent config serialization.
+4. Connect the screen's controls to a persistent config and search coordinator.
 5. Add verified, narrow mixins for standardized drops and golem/barter behavior.
 
-Until those steps are complete, structure commands fail or report
-`TODO — NEEDS VERIFICATION` instead of returning fabricated seed results.
+The client screen intentionally reports `NOT VERIFIED` and does not claim that
+the current placeholder analyzer inspected Minecraft world generation. The
+fallback planner produces deterministic, validated placement plans from real
+adapter-supplied terrain candidates; it does not mutate playable chunks until a
+26.2 world-generation hook is implemented.

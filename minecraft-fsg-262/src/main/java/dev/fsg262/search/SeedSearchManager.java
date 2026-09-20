@@ -31,21 +31,32 @@ public final class SeedSearchManager implements AutoCloseable {
             Consumer<Long> acceptedSeedReporter
     ) {
         var cancelled = new AtomicBoolean(false);
-        var future = executor.submit(() -> {
-            var generator = new CandidateSeedGenerator(request.generatorSeed());
+            var paused = new AtomicBoolean(false);
+            var future = executor.submit(() -> {
+                var generator = new CandidateSeedGenerator(request.generatorSeed());
             long tested = 0;
             long rejected = 0;
             long filterPassed = 0;
             long completable = 0;
             for (long index = 0; index < request.maximumCandidates(); index++) {
                 if (cancelled.get() || Thread.currentThread().isInterrupted()) return;
+                while (paused.get() && !cancelled.get()) {
+                    try {
+                        Thread.sleep(25L);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
                 long candidate = generator.seedAt(index);
                 var evaluation = evaluator.evaluate(candidate, request);
                 tested++;
                 if (evaluation.decision() == SearchDecision.REJECTED) rejected++;
                 if (evaluation.decision() == SearchDecision.ACCEPTED) {
                     filterPassed++;
-                    completable++;
+                    if (evaluation.reason().toLowerCase(java.util.Locale.ROOT).contains("completable")) {
+                        completable++;
+                    }
                     progressReporter.accept(new SeedSearchProgress(
                             tested, rejected, filterPassed, completable,
                             candidate, evaluation.reason()));
@@ -57,7 +68,7 @@ public final class SeedSearchManager implements AutoCloseable {
                         candidate, evaluation.reason()));
             }
         });
-        return new SeedSearchHandle(cancelled, future);
+        return new SeedSearchHandle(cancelled, paused, future);
     }
 
     @Override

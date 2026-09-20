@@ -4,6 +4,7 @@ import dev.fsg262.search.SeedSearchHandle;
 import dev.fsg262.search.SeedSearchManager;
 import dev.fsg262.search.SeedSearchRequest;
 import dev.fsg262.search.SeedCandidateEvaluator;
+import dev.fsg262.search.AcceptedSeed;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
