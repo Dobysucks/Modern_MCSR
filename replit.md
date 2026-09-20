@@ -1,6 +1,7 @@
-# [Project name]
+# FSG Seed Types 26.2
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Independent Fabric 26.2 speedrunning mod with reproducible 1.16.1-style seed
+types, explicit filters, and deterministic practice RNG.
 
 ## Run & Operate
 
@@ -22,15 +23,26 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `minecraft-fsg-262/` — standalone Fabric mod project.
+- `minecraft-fsg-262/docs/filter-spec.md` — exact thresholds and pass rules.
+- `minecraft-fsg-262/docs/architecture.md` — adapter boundary and coordinate model.
+- `minecraft-fsg-262/docs/design.md` — pre-implementation design record.
+- `minecraft-fsg-262/src/main/java/dev/fsg262/filter/` — pure filter engine.
+- `minecraft-fsg-262/src/main/java/dev/fsg262/rng/` — deterministic RNG/bartering.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The mod uses Mojang mappings for 26.2; Yarn is not used for 26.1+ targets.
+- World-generation facts enter through `WorldGenerationAnalyzer`; pure rules do
+  not load complete worlds or choose arbitrary nearest structures.
+- Strict profile thresholds are immutable and separate from custom settings.
+- Standardized RNG is opt-in per mechanic and never replaces Minecraft globally.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+The mod exposes explicit start-type filter evaluation, auditable seed reports,
+deterministic indexed bartering, coordinate utilities, and a future path to
+fast external seed scanning.
 
 ## User preferences
 
@@ -38,7 +50,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Minecraft 26.2 requires Java 25 and the official Fabric toolchain values in
+  `minecraft-fsg-262/gradle.properties`.
+- Structure commands intentionally report `TODO — NEEDS VERIFICATION` until
+  the exact 26.2 world-generation adapter is implemented.
 
 ## Pointers
 

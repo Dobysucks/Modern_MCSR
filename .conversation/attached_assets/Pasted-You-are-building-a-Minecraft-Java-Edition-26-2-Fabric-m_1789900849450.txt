@@ -1,0 +1,963 @@
+You are building a Minecraft Java Edition **26.2 Fabric mod** whose purpose is to create a modern-version speedrunning environment inspired by the *gameplay mechanics and seed-filter philosophy* of MCSR Ranked.
+
+IMPORTANT LEGAL / PROJECT SCOPE:
+
+- This is an independent project.
+- Do NOT copy MCSR Ranked source code.
+- Do NOT copy proprietary implementation details.
+- We are implementing equivalent functionality independently.
+- Publicly documented gameplay/filter requirements may be used as specifications.
+- The target Minecraft version is **26.2**.
+- The mod must be Fabric-based.
+- Do not make this a multiplayer Elo/ranking system.
+- Do not implement matchmaking.
+- The main purpose is:
+  1. Generate/filter highly playable speedrun seeds.
+  2. Standardize important RNG.
+  3. Bring selected 1.16.1 speedrunning mechanics into Minecraft 26.2.
+  4. Make the resulting system configurable and reproducible.
+
+==================================================
+PART 1 — EXACT FILTER PHILOSOPHY
+==================================================
+
+Do NOT make a generic "good seed" filter.
+
+Implement a deterministic filtered-seed generator with explicit, testable requirements.
+
+Every seed must be evaluated against a complete FilterProfile.
+
+Create:
+
+FilterProfile
+SeedFilter
+SeedEvaluation
+OverworldFilter
+NetherFilter
+RNGProfile
+
+Every requirement must have:
+
+- exact numerical threshold
+- exact pass/fail condition
+- explanation
+- debug output
+- automated test
+
+Never use vague conditions such as:
+
+"nearby village"
+"good bastion"
+"enough iron"
+
+Instead use exact values.
+
+Example:
+
+village_max_spawn_distance_chunks = 7
+
+minimum_iron = 7
+
+etc.
+
+==================================================
+PART 2 — OVERWORLD START TYPES
+==================================================
+
+Implement the following filtered start types:
+
+1. Village
+2. Shipwreck
+3. Desert Temple
+4. Ruined Portal
+5. Buried Treasure
+
+The filter must support enabling/disabling each start type.
+
+The intended start structure should be positioned according to the documented Ranked-style coordinate/filter model.
+
+Do NOT simply search for the nearest random structure.
+
+The filter must identify the intended structure and verify that it satisfies all requirements.
+
+--------------------------------------------------
+VILLAGE
+--------------------------------------------------
+
+Requirements:
+
+- Village must spawn within **7 chunks** of the intended spawn/start area.
+- Village must contain a guaranteed blacksmith-type building.
+- The start must provide at least:
+
+  **7 iron**
+
+  OR
+
+  **4 iron + 3 diamonds**
+
+- Count relevant iron available from:
+  - chests
+  - iron golem
+  - other explicitly allowed starting resources
+
+- Iron Golem behavior must be standardized so that it always drops:
+
+  **4 iron**
+
+  rather than allowing the normal 3–5 range.
+
+- Food must be available through:
+  - village chests
+  - hay bales
+  - other explicitly documented food sources
+
+- A river biome must exist within:
+
+  **6 chunks of the center of the village**
+
+- Three usable lava pools must be guaranteed near the village.
+
+OR:
+
+- The blacksmith must contain:
+
+  **8+ obsidian**
+
+  allowing a blacksmith-based enter.
+
+- Artificially guaranteed lava pools must be distinguishable from ordinary naturally generated lava pools in the filter implementation.
+
+- Taiga villages must guarantee:
+
+  **10+ obsidian**
+
+  in the appropriate blacksmith/start configuration.
+
+Implement the special blacksmith variants correctly:
+
+- Weaponsmith
+- Toolsmith
+- Armorer
+
+and account for biome-specific variants.
+
+--------------------------------------------------
+SHIPWRECK
+--------------------------------------------------
+
+Requirements:
+
+- Shipwreck within:
+
+  **4 chunks**
+
+  of the intended start.
+
+- At least:
+
+  **7 iron**
+
+  OR
+
+  **4 iron + 3 diamonds**
+
+- Food must be available in the appropriate chest.
+
+- Suspicious stew must NOT produce poison if this mechanic is part of the filtered-start implementation.
+
+- Shipwreck should not be surrounded by irrelevant blocking structures/entities that interfere with the intended start.
+
+Specifically account for:
+
+- buried treasures
+- other shipwrecks
+- irrelevant block entities
+- dungeons
+
+- Shipwreck chests should not normally be buried in unusable terrain.
+
+- Two magma ravines must be guaranteed within:
+
+  **10 chunks**
+
+  of the shipwreck.
+
+- Do not count filtered magma ravines generated in Frozen Ocean biomes if the documented filter excludes them.
+
+--------------------------------------------------
+DESERT TEMPLE
+--------------------------------------------------
+
+Requirements:
+
+- Desert Temple within:
+
+  **5 chunks**
+
+- At least:
+
+  **7 iron**
+
+  OR
+
+  **4 iron + 3 diamonds**
+
+- Food must be obtainable from the temple/start area.
+
+- Nearby wood must be available.
+
+- River biome within:
+
+  **6 chunks**
+
+  of the temple.
+
+- Three usable lava pools must be guaranteed near the temple.
+
+--------------------------------------------------
+RUINED PORTAL
+--------------------------------------------------
+
+Requirements:
+
+- Ruined Portal within:
+
+  **3 chunks**
+
+- At least:
+
+  **18 iron nuggets**
+
+  from the intended chest/resource setup, excluding resources required for:
+
+  - bucket
+  - flint and steel
+
+  where applicable.
+
+- The filter must recognize that some ruined portals may not provide enough iron for an iron pickaxe.
+
+- Food must be available from:
+  - chest
+  - animals within the allowed radius
+
+- A reliable light/portal ignition method must exist.
+
+Examples:
+
+- Flint and Steel
+- Fire Charge
+- Flint + sufficient iron nuggets
+
+- The Nether enter must be possible through:
+
+  **Obsidian**
+
+  or
+
+  **Bucket**
+
+- Target probability distribution for enter type should follow the documented filter:
+
+  **80/20**
+
+where applicable.
+
+--------------------------------------------------
+BURIED TREASURE
+--------------------------------------------------
+
+Requirements:
+
+- Buried Treasure within:
+
+  **5 chunks**
+
+- At least:
+
+  **7 iron**
+
+  OR
+
+  **4 iron + 3 diamonds**
+
+- Food available.
+
+- No problematic:
+  - extra buried treasures
+  - shipwrecks
+  - irrelevant block entities
+  - dungeons
+
+  interfering with the intended start.
+
+- Two magma ravines within:
+
+  **10 chunks**
+
+  of the treasure.
+
+- Exclude Frozen Ocean magma ravines if required by the filter.
+
+==================================================
+PART 3 — NETHER FILTER
+==================================================
+
+The Nether filter is extremely important.
+
+Do NOT merely require:
+
+"bastion nearby + fortress nearby."
+
+Implement the actual intended-bastion concept.
+
+--------------------------------------------------
+BASTION
+--------------------------------------------------
+
+The intended bastion must satisfy:
+
+- It is the intended closest/useful bastion according to the filter algorithm.
+- It must be at least:
+
+  **10 chunks closer**
+
+  than competing bastions according to the documented coordinate/distance calculation.
+
+- Intended bastion must be within:
+
+  **14 chunks of Nether 0,0**
+
+- Perform an open-terrain check between the approximate Nether entry point and bastion.
+
+- Bastion loot must contain:
+
+  **3+ iron**
+
+  AND
+
+  **5+ obsidian**
+
+  somewhere in the appropriate rampart chest configuration.
+
+- Housing bastions may use the appropriate chest set rather than only rampart chests.
+
+--------------------------------------------------
+STABLES BASTION
+--------------------------------------------------
+
+For Stables bastions:
+
+Require either:
+
+- **2 good gaps**
+
+OR
+
+- **1 good gap + at least one triple-chest rampart**
+
+Define "good gap" explicitly in code.
+
+Do NOT implement it as a vague terrain check.
+
+Create a dedicated:
+
+BastionGapAnalyzer
+
+class.
+
+--------------------------------------------------
+FORTRESS
+--------------------------------------------------
+
+The intended fortress must satisfy:
+
+- Fortress origin within:
+
+  **16 chunks**
+
+  of the intended bastion.
+
+- Open-terrain/pathability check between bastion and fortress.
+
+Do not simply use Euclidean distance.
+
+Implement the same chunk/region-based interpretation used by the filter specification.
+
+==================================================
+PART 4 — COORDINATE SYSTEM
+==================================================
+
+Document precisely:
+
+- Overworld spawn/start coordinate
+- Nether origin
+- Bastion coordinate selection
+- Fortress coordinate selection
+- Chunk-distance calculations
+- Block-distance calculations
+- Region calculations
+
+Never mix:
+
+- blocks
+- chunks
+- regions
+
+without explicit conversion.
+
+Create utility methods:
+
+blocksToChunks()
+chunksToBlocks()
+chunkDistance()
+blockDistance()
+regionDistance()
+
+with unit tests.
+
+==================================================
+PART 5 — RNG STANDARDIZATION
+==================================================
+
+Create:
+
+SpeedrunRNG
+
+with:
+
+LegacyRNG1161
+ModernRNG262
+StandardizedSpeedrunRNG
+
+Do NOT globally replace Minecraft's RNG.
+
+Only standardize mechanics required by this mod.
+
+The goal is deterministic competition/practice:
+
+Same world seed
++
+same RNG seed
+=
+same relevant loot/RNG sequence.
+
+By default:
+
+RNG seed = Overworld seed
+
+Allow an optional separate RNG seed in configuration.
+
+==================================================
+PART 6 — PIGLIN BARTERING
+==================================================
+
+Implement a dedicated:
+
+LegacyPiglinBartering
+
+system.
+
+The objective is to reproduce the relevant speedrunning behavior documented for standardized Ranked-style RNG while running inside Minecraft 26.2.
+
+The implementation must explicitly model:
+
+- barter RNG
+- barter sequence
+- gold input
+- output item
+- output quantity
+- obsidian probability
+- ender pearl probability
+- other barter outputs
+- deterministic ordering
+
+For standardized speedrun mode:
+
+- Every player using the same seed/RNG seed must receive the same barter sequence.
+- Do not rely on each player's independent random state.
+
+Implement deterministic barter indexing:
+
+barterIndex = 0, 1, 2, 3...
+
+The same RNG seed + same barter index must always produce the same result.
+
+Implement the documented guarantees:
+
+- Increased obsidian rate according to the standardized RNG specification.
+- At least:
+
+  **6 obsidian**
+
+  within every:
+
+  **72 barters**
+
+  corresponding to the standardized 8-gold-block sequence.
+
+- Exactly:
+
+  **3 ender pearl trades**
+
+  every:
+
+  **72 barters**
+
+  according to the standardized sequence.
+
+IMPORTANT:
+
+Do not fake this by simply changing the loot table.
+
+Build a deterministic sequence generator.
+
+Add tests that run:
+
+72 barters
+
+and verify the guarantees.
+
+Also test:
+
+144 barters
+216 barters
+1008 barters
+
+to ensure the sequence remains deterministic.
+
+==================================================
+PART 7 — OTHER STANDARDIZED RNG
+==================================================
+
+Implement standardized RNG hooks for speedrunning-relevant mob drops.
+
+At minimum investigate and support:
+
+- Blaze rod drops
+- Ender pearl drops
+- Animal food drops
+- Hoglin food drops
+- Flint drops where relevant
+
+Do not assume all RNG needs modification.
+
+For each mechanic create:
+
+RNGMechanicDefinition
+
+containing:
+
+- mechanic name
+- vanilla behavior
+- standardized behavior
+- RNG source
+- seed source
+- deterministic sequence
+- tests
+
+==================================================
+PART 8 — SEED EVALUATION OUTPUT
+==================================================
+
+When testing a seed, produce a detailed report.
+
+Example:
+
+SEED: 123456789
+
+OVERWORLD
+[PASS] Village: 4.2 chunks
+[PASS] Iron: 8
+[PASS] Food: YES
+[PASS] River: 4.8 chunks
+[PASS] Lava pools: 3
+[PASS] Blacksmith: YES
+
+NETHER
+[PASS] Bastion: 11.4 chunks
+[PASS] Bastion separation: 12 chunks
+[PASS] Bastion iron: 4
+[PASS] Bastion obsidian: 7
+[PASS] Terrain: PASS
+[PASS] Fortress: 13.2 chunks from bastion
+[PASS] Fortress terrain: PASS
+
+FINAL RESULT:
+PASS
+
+If failed:
+
+[FAIL] Village iron requirement
+Expected: >=7 iron OR 4 iron + 3 diamonds
+Found: 5 iron
+
+FINAL RESULT:
+FAIL
+
+==================================================
+PART 9 — SEED FILTER ENGINE
+==================================================
+
+The filter must be capable of evaluating seeds without fully loading a playable Minecraft world whenever possible.
+
+Use Minecraft's world-generation APIs directly.
+
+Do NOT create:
+
+seed -> load complete world -> walk around -> inspect blocks
+
+for every seed.
+
+Instead use:
+
+seed
+↓
+Biome generation
+↓
+Structure placement
+↓
+Structure-specific generation
+↓
+Loot/resource analysis
+↓
+Terrain analysis
+↓
+Filter evaluation
+
+The architecture must allow millions of seeds to eventually be processed by an external CLI.
+
+==================================================
+PART 10 — SEED DATABASE
+==================================================
+
+Create a JSON database.
+
+Each accepted seed should store:
+
+{
+  "seed": "...",
+  "minecraft_version": "26.2",
+  "filter_version": "...",
+  "start_type": "...",
+  "spawn": {},
+  "overworld": {},
+  "nether": {},
+  "bastion": {},
+  "fortress": {},
+  "rng_seed": "...",
+  "requirements": {},
+  "passed": true
+}
+
+Include the exact filter version so old seeds can be invalidated when filter rules change.
+
+==================================================
+PART 11 — FILTER PROFILES
+==================================================
+
+Create profiles:
+
+STRICT_RANKED_STYLE
+BALANCED
+CUSTOM
+
+STRICT_RANKED_STYLE should reproduce the documented numerical requirements exactly.
+
+CUSTOM should allow the user to change:
+
+- structure distances
+- iron requirements
+- obsidian requirements
+- food requirements
+- terrain requirements
+- bastion requirements
+- fortress requirements
+- RNG settings
+
+Do NOT make the strict profile silently change when the user edits custom settings.
+
+==================================================
+PART 12 — COMMANDS
+==================================================
+
+Implement:
+
+/speedrun seedinfo <seed>
+
+/speedrun filter <seed>
+
+/speedrun filterrange <start> <end>
+
+/speedrun config
+
+/speedrun rng
+
+/speedrun barter
+
+/speedrun version
+
+Example:
+
+/speedrun seedinfo 123456
+
+prints the complete filter evaluation.
+
+==================================================
+PART 13 — CONFIG GUI
+==================================================
+
+Create a Fabric configuration screen.
+
+Sections:
+
+START TYPES
+- Village
+- Shipwreck
+- Desert Temple
+- Ruined Portal
+- Buried Treasure
+
+OVERWORLD
+- spawn distance
+- iron requirement
+- food requirement
+- river distance
+- lava pool requirements
+- obsidian requirements
+
+NETHER
+- bastion distance
+- bastion separation
+- bastion loot
+- terrain requirements
+- fortress distance
+- fortress terrain
+
+RNG
+- standardized RNG ON/OFF
+- shared RNG seed
+- legacy piglin behavior
+- blaze RNG
+- pearl RNG
+- mob-drop RNG
+
+DEBUG
+- filter logging
+- RNG logging
+- structure logging
+- seed reports
+
+==================================================
+PART 14 — 26.2 COMPATIBILITY
+==================================================
+
+The entire implementation must target:
+
+Minecraft Java Edition 26.2
+
+Do not accidentally use:
+
+1.16.1 mappings
+1.20 APIs
+1.21 APIs
+26.1 APIs
+
+unless they are actually compatible.
+
+Before implementation:
+
+1. Inspect the 26.2 Fabric mappings.
+2. Locate modern implementations of all required systems.
+3. Locate historical 1.16.1 behavior from reliable technical sources/documentation.
+4. Compare them.
+5. Write a design document.
+6. Implement.
+7. Compile.
+8. Test.
+9. Fix API errors.
+
+Never invent Minecraft classes or methods.
+
+If Replit cannot verify an API, stop and investigate rather than generating fake code.
+
+==================================================
+PART 15 — TEST SUITE
+==================================================
+
+Create automated tests for:
+
+FILTER:
+
+- village <= 7 chunks
+- village > 7 chunks
+- 7 iron
+- 6 iron
+- 4 iron + 3 diamonds
+- river <= 6 chunks
+- river > 6 chunks
+- 3 lava pools
+- 8 obsidian blacksmith
+- taiga 10+ obsidian
+
+SHIPWRECK:
+
+- <=4 chunks
+- >=7 iron
+- 4 iron + 3 diamonds
+- magma ravines <=10 chunks
+
+DESERT TEMPLE:
+
+- <=5 chunks
+- iron requirement
+- river requirement
+- lava requirements
+
+RUINED PORTAL:
+
+- <=3 chunks
+- 18 iron nuggets
+- enter type
+- food/light requirement
+
+BURIED TREASURE:
+
+- <=5 chunks
+- iron requirement
+- magma ravines
+
+BASTION:
+
+- <=14 chunks from 0,0
+- 10-chunk separation
+- 3+ iron
+- 5+ obsidian
+- terrain check
+- Stables gap requirements
+
+FORTRESS:
+
+- <=16 chunks from bastion
+- terrain check
+
+RNG:
+
+- deterministic seed
+- deterministic barter sequence
+- 72-barter guarantees
+- identical sequence for identical RNG seeds
+- different sequence for different RNG seeds
+
+==================================================
+PART 16 — DEBUG REPLAYABILITY
+==================================================
+
+Create a way to export an RNG test:
+
+seed
+rngSeed
+barterIndex
+expectedOutput
+
+Example:
+
+RNG SEED: 12345
+
+Barter #0 -> ...
+Barter #1 -> ...
+Barter #2 -> ...
+...
+Barter #71 -> ...
+
+This makes it possible to independently verify the implementation.
+
+==================================================
+PART 17 — DO NOT IMPLEMENT YET
+==================================================
+
+Before writing the main implementation, FIRST produce:
+
+1. Exact architecture.
+2. Minecraft 26.2 classes/APIs that will be modified or injected into.
+3. Historical 1.16.1 behavior being reproduced.
+4. Complete filter specification.
+5. RNG specification.
+6. Data structures.
+7. Test plan.
+8. Known uncertainties.
+
+Then begin implementation one subsystem at a time.
+
+The implementation order should be:
+
+PHASE 1:
+Fabric 26.2 project + build
+
+PHASE 2:
+Seed/structure analysis engine
+
+PHASE 3:
+Overworld filtering
+
+PHASE 4:
+Nether filtering
+
+PHASE 5:
+Seed database
+
+PHASE 6:
+Deterministic RNG engine
+
+PHASE 7:
+Piglin bartering
+
+PHASE 8:
+Other standardized RNG
+
+PHASE 9:
+Commands/debug tools
+
+PHASE 10:
+GUI/config
+
+PHASE 11:
+Full automated testing
+
+PHASE 12:
+Performance optimization
+
+==================================================
+FINAL DESIGN GOAL
+==================================================
+
+The final result should essentially be:
+
+Minecraft 26.2
++
+modern world generation
++
+precisely defined MCSR-style filtered starts
++
+precisely defined Nether filter
++
+deterministic standardized speedrun RNG
++
+1.16.1-relevant speedrunning mechanics
+=
+a standalone modern-version speedrunning environment.
+
+The most important requirement is:
+
+**DO NOT MAKE UP NUMBERS.**
+
+Every numerical filter must be explicitly documented in the source code and backed by the relevant technical specification.
+
+If a requirement is uncertain, mark it:
+
+TODO — NEEDS VERIFICATION
+
+instead of guessing.
+
+The mod should be engineered so that the filter can later be expanded with additional requirements without rewriting the entire system.

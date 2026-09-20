@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FSG Seed Types 26.2 accepted seed",
+  "type": "object",
+  "required": [
+    "seed",
+    "minecraft_version",
+    "filter_version",
+    "start_type",
+    "spawn",
+    "overworld",
+    "nether",
+    "bastion",
+    "fortress",
+    "rng_seed",
+    "requirements",
+    "passed"
+  ],
+  "properties": {
+    "seed": { "type": "string" },
+    "minecraft_version": { "const": "26.2" },
+    "filter_version": { "type": "string" },
+    "start_type": {
+      "enum": ["VILLAGE", "SHIPWRECK", "DESERT_TEMPLE", "RUINED_PORTAL", "BURIED_TREASURE"]
+    },
+    "spawn": { "type": "object" },
+    "overworld": { "type": "object" },
+    "nether": { "type": "object" },
+    "bastion": { "type": "object" },
+    "fortress": { "type": "object" },
+    "rng_seed": { "type": "string" },
+    "requirements": { "type": "object" },
+    "passed": { "type": "boolean" }
+  }
+}

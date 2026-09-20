@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "DglcNvlyxRd3jsXBVlmMM"
+uri = "file://minecraft-fsg-262/build/libs/fsg-seed-types-262-0.1.0.jar"
+type = "unspecified"
+title = "FSG Seed Types 26.2 mod JAR"
+description = "Fabric 26.2 mod build containing the explicit seed-type filter engine, Nether rules, deterministic piglin bartering, commands, and test-verified core logic."
+logical_id = "37f008cf-2612-4c36-a833-442e0de1f079"
+content_hash = "sha256:dd083b6807875fdf3ee4ce9521699fe3ccb2601dd0b38550524bf4de77cce60f"
+size = 49320
+mtime_ms = 1789901456366
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:f0ea2e4c-d55a-42bf-8ad9-d097a4d3eab8/37f008cf-2612-4c36-a833-442e0de1f079/9bce37f6-f6c2-4785-9707-2a43638e3ab2"
+storage_version_token = "1789901505132010"
+content_type = "application/octet-stream"
