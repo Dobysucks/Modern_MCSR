@@ -41,6 +41,8 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
     private volatile StructurePlacementInspection lastInspection = StructurePlacementInspection.unverified();
     private volatile VillageStructureInspectionResult lastVillageInspection =
             VillageStructureInspectionResult.unavailable(0, "Not inspected");
+    private volatile StructureGenerationInspectionResult lastGeneratedInspection =
+            StructureGenerationInspectionResult.unavailable(0, "Not inspected");
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
         this(context, null);
@@ -79,6 +81,8 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
         if (startType == StartType.VILLAGE) {
             inspectVillage(seed, generator, randomState, found, stem, () -> false);
+        } else {
+            inspectStructure(seed, startType, profile, () -> false);
         }
 
         var type = stem.type().value();
@@ -132,6 +136,74 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
     public VillageStructureInspectionResult lastVillageInspection() {
         return lastVillageInspection;
+    }
+
+    public StructureGenerationInspectionResult lastGeneratedInspection() {
+        return lastGeneratedInspection;
+    }
+
+    /**
+     * Generates the selected Overworld structure through Minecraft's actual
+     * Structure.generate implementation. This is geometry-only evidence.
+     */
+    public StructureGenerationInspectionResult inspectStructure(
+            long seed,
+            StartType startType,
+            FilterProfile profile,
+            BooleanSupplier cancelled
+    ) {
+        if (cancelled.getAsBoolean()) {
+            return unavailableGenerated(seed, "Cancelled before generation");
+        }
+        var stem = context.selectedDimensions().get(LevelStem.OVERWORLD)
+                .orElseThrow(() -> new IllegalStateException("Overworld dimension is unavailable"));
+        if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
+            return unavailableGenerated(seed, "Overworld is not noise-based");
+        }
+        var randomState = RandomState.create(context.worldgenLoadContext(),
+                generator.generatorSettings().unwrapKey()
+                        .orElse(NoiseGeneratorSettings.OVERWORLD), seed);
+        var structureState = generator.createState(
+                context.worldgenLoadContext().lookupOrThrow(Registries.STRUCTURE_SET),
+                randomState, seed);
+        var found = findStructure(structureState, startType, profile);
+        if (found == null) return unavailableGenerated(seed, "No structure placement found");
+        if (templateManager == null) {
+            return unavailableGenerated(seed, "No vanilla StructureTemplateManager was supplied");
+        }
+        long started = System.nanoTime();
+        try {
+            var height = LevelHeightAccessor.create(stem.type().value().minY(),
+                    stem.type().value().height());
+            var structureStart = found.structure.value().generate(
+                    found.structure,
+                    net.minecraft.world.level.Level.OVERWORLD,
+                    context.worldgenLoadContext(),
+                    generator,
+                    generator.getBiomeSource(),
+                    randomState,
+                    templateManager,
+                    seed,
+                    found.chunk,
+                    0,
+                    height,
+                    holder -> true);
+            if (cancelled.getAsBoolean()) {
+                return unavailableGenerated(seed, "Cancelled after generation");
+            }
+            var bounds = structureStart.getPieces().stream()
+                    .map(piece -> piece.getBoundingBox()).toList();
+            var result = new StructureGenerationInspectionResult(
+                    seed, found.structureKey(), found.chunk,
+                    structureStart.getBoundingBox(), bounds.size(), bounds,
+                    (System.nanoTime() - started) / 1_000_000L,
+                    structureStart.isValid() && !bounds.isEmpty(), "");
+            lastGeneratedInspection = result;
+            return result;
+        } catch (RuntimeException failure) {
+            return unavailableGenerated(seed,
+                    "Vanilla structure generation failed: " + failure.getClass().getSimpleName());
+        }
     }
 
     public VillageStructureInspectionResult inspectVillage(
@@ -245,8 +317,13 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             var result = VillageStructureInspectionResult.unavailable(
                     seed, "No vanilla StructureTemplateManager was supplied");
             lastVillageInspection = result;
+            lastGeneratedInspection = new StructureGenerationInspectionResult(
+                    result.seed(), "minecraft:village", result.startChunk(),
+                    result.structureBounds(), result.pieceCount(), result.pieceBounds(),
+                    result.generationTimeMillis(), result.verified(), result.failureReason());
             return result;
         }
+
         if (cancelled.getAsBoolean()) {
             var result = VillageStructureInspectionResult.unavailable(seed, "Cancelled before generation");
             lastVillageInspection = result;
@@ -288,6 +365,16 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
                 (System.nanoTime() - started) / 1_000_000L,
                 start.isValid() && !pieces.isEmpty(), "");
         lastVillageInspection = result;
+        lastGeneratedInspection = new StructureGenerationInspectionResult(
+                result.seed(), "minecraft:village", result.startChunk(),
+                result.structureBounds(), result.pieceCount(), result.pieceBounds(),
+                result.generationTimeMillis(), result.verified(), result.failureReason());
+        return result;
+    }
+
+    private StructureGenerationInspectionResult unavailableGenerated(long seed, String reason) {
+        var result = StructureGenerationInspectionResult.unavailable(seed, reason);
+        lastGeneratedInspection = result;
         return result;
     }
 

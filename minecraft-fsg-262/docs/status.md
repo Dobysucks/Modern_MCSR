@@ -37,6 +37,13 @@
   `StructureTemplateManager`. When template loading succeeds, the adapter
   records the actual `StructureStart`, piece count, structure bounds, and
   piece bounding boxes with generation timing.
+- A reusable geometry-only structure inspection result now exposes the same
+  actual `StructureStart`/`StructurePiece` evidence for the other four
+  Overworld start categories when requested. It does not infer blocks,
+  entities, or loot.
+- A bounded diagnostic benchmark reports tested, PASS, FAIL, NOT_VERIFIED,
+  cancellation, elapsed time, and candidates per second without changing
+  evaluator decisions.
 - MCSR configuration is integrated as a fourth native Create New World tab
   beside the vanilla Game, World, and More tabs. Settings are shared through
   `WorldCreationController` and persisted to the client config file; no
@@ -45,8 +52,9 @@
 ## Verified boundary and remaining work
 
 1. Resolve exact 26.2 biome and structure APIs from the dependency sources.
-2. Implement `WorldGenerationAnalyzer` using placement, generation, loot, and
-   terrain APIs without full-world loading.
+2. Build a real `WorldGenLevel`/`StructureManager` adapter before inspecting
+   generated blocks or block entities. Direct `Structure.generate` is not
+   sufficient for that evidence.
 3. Add intended-structure candidate provenance and real seed reports.
 4. Persist Create New World settings across screen instances and connect the
    coordinator to a verified 26.2 world-generation evaluator.
@@ -54,13 +62,12 @@
 
 The local evaluator is wired into the Create New World search for all five seed
 types and performs no network access. It now performs real placement, biome,
-and terrain queries against the selected Create New World context, but still
-intentionally reports
+terrain, and optional direct structure-start/piece geometry queries against the
+selected Create New World context, but still intentionally reports
 `NOT VERIFIED` for seed search because the current world-generation adapter is
-not yet capable of exact generated structure pieces, loot, block entities,
-Nether route, or natural lava inspection. Placement evidence is not promoted
-to filter acceptance; Village structure-start/piece evidence is now exposed
-for the debug path, but no candidate can be accepted from incomplete evidence.
+not yet capable of generated blocks, loot, block entities, Nether route, or
+natural lava inspection. Placement or piece evidence is not promoted to filter
+acceptance; no candidate can be accepted from incomplete evidence.
 The client screen does not claim that
 the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
