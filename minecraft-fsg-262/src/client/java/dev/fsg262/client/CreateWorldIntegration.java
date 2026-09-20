@@ -46,61 +46,119 @@ public final class CreateWorldIntegration {
 
     private static final class McsrTab extends GridLayoutTab {
         private final CreateWorldScreen screen;
+        private final Button statusLabel;
+        private final Button progressLabel;
+        private final Button acceptedLabel;
 
         private McsrTab(CreateWorldScreen screen) {
             super(Component.literal("MCSR"));
             this.screen = screen;
+            this.statusLabel = text("Status: " + CONTROLLER.status());
+            this.progressLabel = text(progressText());
+            this.acceptedLabel = text(acceptedText());
             layout.columnSpacing(8).rowSpacing(4);
             addToggle("Enabled", CONTROLLER.settings().enabled(), current ->
                     update(current, !current.enabled(), current.seedType(), current.profileName(),
-                            current.completable(), current.standardizedRng(), current.customRngSeed()), 0);
+                            current.completable(), current.standardizedRng(), current.customRngSeed()),
+                    settings -> settings.enabled(), 0, 0);
             addCycle("Seed Type", CONTROLLER.settings().seedType().name(), button -> {
                 var current = CONTROLLER.settings();
                 update(button, current, nextSeedType(current.seedType()), current.profileName(),
                         current.completable(), current.standardizedRng(), current.customRngSeed());
-            }, 1);
+            }, 0, 1);
             addCycle("Profile", CONTROLLER.settings().profileName(), button -> {
                 var current = CONTROLLER.settings();
                 update(button, current, current.seedType(), nextProfile(current.profileName()),
                         current.completable(), current.standardizedRng(), current.customRngSeed());
-            }, 2);
+            }, 1, 0);
             addToggle("Completable", CONTROLLER.settings().completable(), current ->
                     update(current, current.enabled(), current.seedType(), current.profileName(),
-                            !current.completable(), current.standardizedRng(), current.customRngSeed()), 3);
+                            !current.completable(), current.standardizedRng(), current.customRngSeed()),
+                    settings -> settings.completable(), 1, 1);
             addToggle("Standardized RNG", CONTROLLER.settings().standardizedRng(), current ->
                     update(current, current.enabled(), current.seedType(), current.profileName(),
-                            current.completable(), !current.standardizedRng(), current.customRngSeed()), 4);
+                            current.completable(), !current.standardizedRng(), current.customRngSeed()),
+                    settings -> settings.standardizedRng(), 2, 0);
+            addToggle("Background Filtering", CONTROLLER.settings().backgroundFiltering(), current ->
+                    update(current, current.enabled(), current.seedType(), current.profileName(),
+                            current.completable(), current.standardizedRng(), current.customRngSeed(),
+                            !current.backgroundFiltering()),
+                    settings -> settings.backgroundFiltering(), 2, 1);
             addCycle("RNG Seed", rngLabel(), button -> {
                 var current = CONTROLLER.settings();
                 update(button, current, current.seedType(), current.profileName(),
                         current.completable(), current.standardizedRng(),
                         current.customRngSeed() == null ? 0L : null);
-            }, 5);
+            }, 3, 0);
             layout.addChild(Button.builder(Component.literal("START FILTERING"),
-                    button -> CONTROLLER.startSearch(screen, ignored -> {}, ignored -> {}))
-                    .bounds(0, 0, 210, 20).build(), 0, 6, 2, 1);
+                    button -> CONTROLLER.startSearch(screen,
+                            ignored -> Minecraft.getInstance().execute(this::refresh),
+                            status -> Minecraft.getInstance().execute(() -> {
+                                statusLabel.setMessage(Component.literal("Status: " + status));
+                                refresh();
+                            })))
+                    .bounds(0, 0, 140, 20).build(), 4, 0, 1, 2);
             layout.addChild(Button.builder(Component.literal("STOP FILTERING"),
-                    button -> CONTROLLER.cancel()).bounds(0, 0, 210, 20).build(), 0, 7, 2, 1);
+                    button -> CONTROLLER.cancel()).bounds(0, 0, 140, 20).build(), 5, 0, 1, 2);
+            layout.addChild(statusLabel, 6, 0, 1, 2);
+            layout.addChild(progressLabel, 7, 0, 1, 2);
+            layout.addChild(acceptedLabel, 8, 0, 1, 2);
+        }
+
+        private Button text(String value) {
+            return Button.builder(Component.literal(value), button -> {})
+                    .bounds(0, 0, 140, 20).build();
+        }
+
+        private void refresh() {
+            statusLabel.setMessage(Component.literal("Status: " + CONTROLLER.status()));
+            progressLabel.setMessage(Component.literal(progressText()));
+            acceptedLabel.setMessage(Component.literal(acceptedText()));
+        }
+
+        private String progressText() {
+            var progress = CONTROLLER.progress();
+            if (progress == null) return "Candidates: 0 | Candidates/sec: 0.0 | Current: -";
+            return String.format(java.util.Locale.ROOT,
+                    "Candidates: %d | Candidates/sec: %.1f | Current: %d | Stage: %s",
+                    progress.tested(), progress.candidatesPerSecond(),
+                    progress.currentSeed(), progress.currentStage());
+        }
+
+        private String acceptedText() {
+            return "Accepted Seed: " + (CONTROLLER.hasAcceptedSeed()
+                    ? CONTROLLER.acceptedSeed() : "None");
         }
 
         private void addToggle(String label, boolean value,
-                               java.util.function.Consumer<WorldCreationSettings> action, int row) {
+                               java.util.function.Consumer<WorldCreationSettings> action,
+                               java.util.function.Function<WorldCreationSettings, Boolean> selected,
+                               int row, int column) {
             layout.addChild(Button.builder(Component.literal(label + ": " + (value ? "ON" : "OFF")), button -> {
-                action.accept(CONTROLLER.settings());
-                button.setMessage(Component.literal(label + ": " + (!value ? "ON" : "OFF")));
-            }).bounds(0, 0, 210, 20).build(), 0, row);
+                var current = CONTROLLER.settings();
+                action.accept(current);
+                button.setMessage(Component.literal(label + ": "
+                        + (selected.apply(CONTROLLER.settings()) ? "ON" : "OFF")));
+            }).bounds(0, 0, 150, 20).build(), row, column);
         }
 
         private void addCycle(String label, String value,
-                              java.util.function.Consumer<Button> action, int row) {
+                              java.util.function.Consumer<Button> action, int row, int column) {
             layout.addChild(Button.builder(Component.literal(label + ": " + value),
-                    button -> action.accept(button)).bounds(0, 0, 210, 20).build(), 0, row);
+                    button -> action.accept(button)).bounds(0, 0, 150, 20).build(), row, column);
         }
 
         private void update(WorldCreationSettings current, boolean enabled, SeedTypeChoice type,
                             String profile, boolean completable, boolean rng, Long rngSeed) {
             CONTROLLER.updateSettings(new WorldCreationSettings(enabled, type, profile,
                     completable, rng, rngSeed, current.backgroundFiltering()));
+        }
+
+        private void update(WorldCreationSettings current, boolean enabled, SeedTypeChoice type,
+                            String profile, boolean completable, boolean rng, Long rngSeed,
+                            boolean backgroundFiltering) {
+            CONTROLLER.updateSettings(new WorldCreationSettings(enabled, type, profile,
+                    completable, rng, rngSeed, backgroundFiltering));
         }
 
         private void update(Button button, WorldCreationSettings current, SeedTypeChoice type,

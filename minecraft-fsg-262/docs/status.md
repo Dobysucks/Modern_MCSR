@@ -48,6 +48,10 @@
   Nether-specific random state and height access, and real Bastion or
   Fortress `Structure.generate` calls. It records actual piece geometry and
   remains geometry-only evidence.
+- The analyzer now also uses the actual 26.2 `ChunkGenerator.createBiomes`
+  and `fillFromNoise` pipeline to populate a bounded in-memory vanilla
+  `ProtoChunk`. `GeneratedWorldInspector` scans real block states, fluid
+  source blocks, and any block entities stored by those generation stages.
 - MCSR configuration is integrated as a fourth native Create New World tab
   beside the vanilla Game, World, and More tabs. Settings are shared through
   `WorldCreationController` and persisted to the client config file; no
@@ -88,11 +92,12 @@ NOT_VERIFIED counts and candidates per second. No candidate is accepted when
 the adapter reports `NOT_VERIFIED`.
 
 The following requirements remain intentionally NOT_VERIFIED rather than
-fabricated: generated block scans, block entities/chests, loot tables,
+fabricated: structure-template-generated block scans, block entities/chests, loot tables,
 resource totals, nearby generated-structure exclusions, natural lava pools,
 actual artificial lava block placement, Nether terrain/routes, Bastion and
 Fortress contents, the 26.2 equivalent of the historical magma-ravine rule,
 stronghold/End/Dragon verification, evidence-rich seedbank rows, and the
-end-to-end accepted-seed runtime proof. The direct structure API produces
-starts and pieces but does not place them; performing that placement requires
-the server world lifecycle described above.
+end-to-end accepted-seed runtime proof. Terrain blocks are now generated and
+scanned through `ProtoChunk`; structure-template placement and lazy chest loot
+still require the server world lifecycle described above, so those results are
+not promoted to acceptance.

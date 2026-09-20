@@ -12,6 +12,9 @@ import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+import net.minecraft.world.level.chunk.PalettedContainerFactory;
+import net.minecraft.world.level.chunk.ProtoChunk;
+import net.minecraft.world.level.chunk.UpgradeData;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -23,6 +26,7 @@ import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+import net.minecraft.world.level.levelgen.blending.Blender;
 
 import java.util.Locale;
 import java.util.List;
@@ -43,6 +47,8 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             VillageStructureInspectionResult.unavailable(0, "Not inspected");
     private volatile StructureGenerationInspectionResult lastGeneratedInspection =
             StructureGenerationInspectionResult.unavailable(0, "Not inspected");
+    private volatile GeneratedBlockSummary lastTerrainInspection =
+            GeneratedBlockSummary.unavailable("Not inspected");
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
         this(context, null);
@@ -84,6 +90,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
         } else {
             inspectStructure(seed, startType, profile, () -> false);
         }
+        lastTerrainInspection = inspectGeneratedTerrain(seed, false, found.chunk(), () -> false);
 
         var type = stem.type().value();
         var height = LevelHeightAccessor.create(type.minY(), type.height());
@@ -140,6 +147,53 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
     public StructureGenerationInspectionResult lastGeneratedInspection() {
         return lastGeneratedInspection;
+    }
+
+    public GeneratedBlockSummary lastTerrainInspection() {
+        return lastTerrainInspection;
+    }
+
+    /**
+     * Generates real terrain into an in-memory vanilla ProtoChunk using the
+     * selected noise generator's biome and density stages. This intentionally
+     * does not claim structure placement, block entities, or loot.
+     */
+    public GeneratedBlockSummary inspectGeneratedTerrain(
+            long seed,
+            boolean nether,
+            ChunkPos chunkPos,
+            BooleanSupplier cancelled
+    ) {
+        if (cancelled.getAsBoolean()) {
+            return GeneratedBlockSummary.unavailable("Cancelled before terrain generation");
+        }
+        var stemKey = nether ? LevelStem.NETHER : LevelStem.OVERWORLD;
+        var stem = context.selectedDimensions().get(stemKey)
+                .orElseThrow(() -> new IllegalStateException("Dimension is unavailable"));
+        if (!(stem.generator() instanceof NoiseBasedChunkGenerator generator)) {
+            return GeneratedBlockSummary.unavailable("Dimension is not noise-based");
+        }
+        var settings = generator.generatorSettings().unwrapKey().orElse(
+                nether ? NoiseGeneratorSettings.NETHER : NoiseGeneratorSettings.OVERWORLD);
+        var randomState = RandomState.create(context.worldgenLoadContext(), settings, seed);
+        var type = stem.type().value();
+        var height = LevelHeightAccessor.create(type.minY(), type.height());
+        var factory = PalettedContainerFactory.create(context.worldgenLoadContext());
+        var chunk = new ProtoChunk(chunkPos, UpgradeData.EMPTY, height, factory, null);
+        try {
+            generator.createBiomes(randomState, Blender.empty(), null, chunk).join();
+            if (cancelled.getAsBoolean()) {
+                return GeneratedBlockSummary.unavailable("Cancelled after biome generation");
+            }
+            generator.fillFromNoise(Blender.empty(), randomState, null, chunk).join();
+            if (cancelled.getAsBoolean()) {
+                return GeneratedBlockSummary.unavailable("Cancelled after terrain generation");
+            }
+            return GeneratedWorldInspector.inspect(chunk, type.minY(), type.minY() + type.height());
+        } catch (RuntimeException failure) {
+            return GeneratedBlockSummary.unavailable(
+                    "Vanilla terrain generation failed: " + failure.getClass().getSimpleName());
+        }
     }
 
     /**
