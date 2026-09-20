@@ -1,0 +1,1396 @@
+# Minecraft 26.2 FSG + MCSR Ranked-Style Completable Seed Filter
+## Fabric Mod — Local Filtering + Atum Integration + Standardized RNG
+
+Build a complete Fabric mod for **Minecraft Java 26.2** that recreates the useful gameplay concept of FSG + MCSR Ranked filtered seeds, but implemented natively for Minecraft 26.2.
+
+This is NOT a copy of MCSR Ranked itself.
+
+Do NOT implement:
+
+- Elo
+- matchmaking
+- online Ranked matches
+- player ranking
+- accounts
+- remote seed servers
+- competitive matchmaking
+
+The goal is:
+
+> **FSG-style local seed filtering + Atum reset workflow + MCSR Ranked-style seed requirements + MCSR Ranked-style standardized RNG + a completable-run validator, all running locally in Minecraft 26.2.**
+
+---
+
+# 1. CORE WORKFLOW
+
+The normal user workflow MUST be:
+
+```text
+Player launches Minecraft
+        ↓
+FSG-style UI
+        ↓
+Choose seed type / filter profile
+        ↓
+Atum resets world
+        ↓
+Our mod intercepts the new seed
+        ↓
+Local background seed filtering begins
+        ↓
+Generate/analyze candidate 26.2 world
+        ↓
+Check Overworld requirements
+        ↓
+Check lava access
+        ↓
+Check Nether requirements
+        ↓
+Check standardized RNG progression
+        ↓
+Check completion viability
+        ↓
+REJECT or ACCEPT
+        ↓
+If rejected → immediately continue searching
+        ↓
+If accepted → give seed to Atum
+        ↓
+Atum starts the accepted world
+        ↓
+Player plays
+```
+
+The player should NOT normally need to type:
+
+```text
+/speedrun filter
+```
+
+or manually enter seeds.
+
+The primary experience must feel like **FSG integrated into Atum**.
+
+The mod should automatically search for seeds in the background and feed an accepted seed into the reset workflow.
+
+---
+
+# 2. LOCAL FILTERING
+
+The filtering system must work locally.
+
+Do NOT require:
+
+- an internet connection
+- a remote seed API
+- a remote seed database
+- downloading a predetermined list of seeds
+
+The mod should generate candidate seeds locally and analyze them.
+
+Use asynchronous/background worker threads.
+
+Minecraft's render/client thread MUST NOT freeze while searching.
+
+Architecture should resemble:
+
+```text
+SeedSearchManager
+    ↓
+CandidateSeedGenerator
+    ↓
+WorldgenAnalyzer
+    ↓
+SeedFilter
+    ↓
+LavaPoolAnalyzer
+    ↓
+NetherAnalyzer
+    ↓
+RNGAnalyzer
+    ↓
+CompletionValidator
+    ↓
+AcceptedSeed
+```
+
+---
+
+# 3. MINECRAFT 26.2 WORLDGEN IS THE SOURCE OF TRUTH
+
+This is extremely important.
+
+Minecraft 26.2 is significantly different from Minecraft 1.16.1.
+
+DO NOT blindly port 1.16.1 assumptions.
+
+DO NOT hardcode old terrain behavior.
+
+DO NOT pretend that 1.16.1 biome/structure generation is identical to 26.2.
+
+Build a proper:
+
+```text
+Minecraft26WorldgenAdapter
+```
+
+that uses the actual 26.2 APIs for:
+
+- biome generation
+- terrain generation
+- structure generation
+- structure positions
+- loot
+- block states
+- dimensions
+- Nether terrain
+- End terrain
+- entity spawning
+- portal placement
+
+If an old Ranked/FSG requirement does not make sense in 26.2, adapt its **gameplay purpose**, not its obsolete implementation.
+
+---
+
+# 4. SEED TYPES
+
+Support these five seed types:
+
+```text
+VILLAGE
+SHIPWRECK
+DESERT_TEMPLE
+RUINED_PORTAL
+BURIED_TREASURE
+```
+
+These correspond to the five seed types documented by MCSR Ranked.
+
+Allow the player to choose:
+
+```text
+Any
+Village
+Shipwreck
+Desert Temple
+Ruined Portal
+Buried Treasure
+```
+
+Do not implement Elo-based seed-type restrictions.
+
+This is a standalone local tool.
+
+---
+
+# 5. FILTER PROFILES
+
+Create configurable profiles:
+
+```text
+STRICT
+BALANCED
+CUSTOM
+COMPLETABLE
+```
+
+The most important profile is:
+
+```text
+COMPLETABLE
+```
+
+which means:
+
+> Do not accept a seed merely because it has good structures. Accept it only if the intended speedrun progression is viable under our standardized RNG rules.
+
+Allow the user to toggle requirements individually in CUSTOM mode.
+
+---
+
+# 6. VILLAGE REQUIREMENTS
+
+Adapt the current MCSR Ranked Village concept to 26.2.
+
+Target requirements:
+
+- Village within approximately 7 chunks of spawn/start
+- Guaranteed usable blacksmith-type structure according to the 26.2 equivalent
+- At least 7 iron OR 4 iron + 3 diamonds
+- Include obtainable food
+- Iron Golem should use standardized RNG behavior
+- River requirement adapted to 26.2 biome generation
+- Usable lava access
+- Portal-enterability
+- Useful light/fire source where applicable
+
+Important:
+
+Do not assume every old 1.16.1 structure variant exists identically in 26.2.
+
+Create a 26.2-compatible structure/resource abstraction.
+
+---
+
+# 7. SHIPWRECK REQUIREMENTS
+
+Implement a 26.2-native Shipwreck seed profile.
+
+Check:
+
+- useful shipwreck proximity
+- required chest loot/resources
+- obtainable iron
+- obtainable food
+- portal/lava access
+- relevant nearby terrain
+- Nether route viability
+
+Use actual generated 26.2 structures and loot.
+
+---
+
+# 8. DESERT TEMPLE REQUIREMENTS
+
+Implement a 26.2-native Desert Temple profile.
+
+Check:
+
+- usable desert temple near start
+- relevant chest loot
+- iron/resource availability
+- food
+- lava access
+- route viability
+- Nether progression
+
+Do not copy old structure coordinates blindly.
+
+---
+
+# 9. RUINED PORTAL REQUIREMENTS
+
+Implement a 26.2-native Ruined Portal profile.
+
+Check:
+
+- useful ruined portal
+- usable loot
+- obsidian/portal resources
+- lava access where necessary
+- food/resources
+- viable Nether progression
+
+Again:
+
+Use real 26.2 world generation.
+
+---
+
+# 10. BURIED TREASURE REQUIREMENTS
+
+Implement a 26.2-native Buried Treasure profile.
+
+Target the current Ranked concept:
+
+- treasure within approximately 5 chunks
+- at least 7 iron OR 4 iron + 3 diamonds
+- avoid unwanted nearby structures/block entities where appropriate
+- viable Nether access
+- viable route to completion
+
+IMPORTANT:
+
+The current Ranked documentation contains a requirement involving 2 magma ravines.
+
+DO NOT blindly reproduce 1.16.1 magma-ravine generation in 26.2.
+
+For this 26.2 project, replace obsolete terrain assumptions with the modern usable-lava system described below.
+
+---
+
+# 11. MODERN 26.2 LAVA SYSTEM
+
+This is one of the most important features.
+
+We need:
+
+```text
+usable surface lava access
+```
+
+not old 1.16.1-specific:
+
+```text
+magma ravine
+```
+
+requirements.
+
+For every seed type:
+
+### STEP 1 — SEARCH FOR REAL LAVA
+
+Analyze actual 26.2 terrain for naturally generated surface lava pools.
+
+A qualifying natural lava pool must:
+
+- contain real lava source blocks
+- be exposed to the surface
+- be accessible
+- be practically usable for a speedrun portal
+- not require ridiculous excavation
+- not be completely submerged
+- not be inside an unusable cave
+- be within the configured search radius
+
+Use actual generated blocks/world state.
+
+Do NOT fake natural pools in the analyzer.
+
+---
+
+# 12. ARTIFICIAL LAVA POOL FALLBACK
+
+If:
+
+```text
+No qualifying natural lava pool exists
+```
+
+BUT:
+
+```text
+The seed passes the other required conditions
+AND
+the seed is otherwise completable
+```
+
+then generate:
+
+```text
+EXACTLY 3 ARTIFICIAL LAVA POOLS
+```
+
+near the relevant starting location.
+
+Default maximum distance:
+
+```text
+32 blocks
+```
+
+The three pools must be generated within approximately 32 blocks of the relevant start/structure.
+
+This fallback applies to:
+
+```text
+Village
+Shipwreck
+Desert Temple
+Ruined Portal
+Buried Treasure
+```
+
+---
+
+# 13. ARTIFICIAL POOL DESIGN
+
+Artificial pools should look and behave like plausible Minecraft surface lava pools.
+
+Do NOT create:
+
+- giant lava lakes
+- floating lava
+- random lava towers
+- enormous flat rectangles
+- obviously artificial structures
+- pools inside important structures
+
+Each pool should:
+
+- be on/near the surface
+- have a usable shape
+- contain real lava source blocks
+- have safe surrounding terrain
+- be reachable
+- allow portal construction
+- be visually similar to a plausible vanilla lava pool
+
+Create:
+
+```text
+ArtificialLavaPoolGenerator
+```
+
+with:
+
+```text
+findCandidatePositions()
+validateTerrain()
+selectThreePositions()
+generatePool()
+verifyPool()
+```
+
+---
+
+# 14. ARTIFICIAL POOL DETERMINISM
+
+Artificial pools MUST be deterministic.
+
+Same:
+
+```text
+World Seed
+RNG Seed
+Seed Type
+Filter Configuration
+```
+
+must produce the same:
+
+```text
+pool locations
+pool dimensions
+pool shape
+```
+
+Never use uncontrolled:
+
+```java
+Math.random()
+```
+
+Use deterministic seed-derived RNG.
+
+---
+
+# 15. DO NOT ACCEPT A BAD SEED JUST BECAUSE YOU CAN GENERATE LAVA
+
+The artificial lava fallback is NOT permission to accept any seed.
+
+The correct logic is:
+
+```text
+Candidate seed
+    ↓
+Check structures/resources
+    ↓
+Check Nether
+    ↓
+Check RNG
+    ↓
+Check completion
+    ↓
+If all pass:
+    if natural lava exists:
+        use natural lava
+    else:
+        generate 3 artificial pools
+    ↓
+ACCEPT
+```
+
+If the seed fails another important requirement:
+
+```text
+REJECT
+```
+
+Do not rescue a bad seed merely by adding lava.
+
+---
+
+# 16. COMPLETABLE SEED SYSTEM
+
+Create a dedicated:
+
+```text
+CompletionValidator
+```
+
+This is separate from:
+
+```text
+SeedFilter
+```
+
+A seed can therefore have:
+
+```text
+FILTER_PASS
+COMPLETABLE_PASS
+```
+
+independently.
+
+The normal Completable profile requires both.
+
+The intended progression is:
+
+```text
+Spawn
+ ↓
+Get basic resources
+ ↓
+Get iron / diamonds / required materials
+ ↓
+Obtain food
+ ↓
+Get lava / portal access
+ ↓
+Enter Nether
+ ↓
+Reach Bastion
+ ↓
+Obtain required resources
+ ↓
+Reach Fortress
+ ↓
+Obtain Blaze Rods
+ ↓
+Obtain Ender Pearls
+ ↓
+Craft Eyes of Ender
+ ↓
+Return / locate Stronghold
+ ↓
+Enter End
+ ↓
+Defeat Ender Dragon
+ ↓
+Exit End Portal
+```
+
+The validator should verify as much of this as can actually be determined from deterministic worldgen/RNG.
+
+Do NOT claim mathematically guaranteed completion if the implementation cannot prove it.
+
+If something cannot be verified:
+
+```text
+NOT VERIFIED
+```
+
+must be reported.
+
+---
+
+# 17. NETHER REQUIREMENTS
+
+Adapt the current Ranked Nether concept.
+
+Check:
+
+### Bastion
+
+- intended bastion within approximately 14 chunks of the relevant origin/entry
+- nearest/intended bastion relationship
+- open terrain route where applicable
+- useful chest loot
+- required iron/obsidian conditions
+- bastion type
+- stables gaps where applicable
+
+Current Ranked documentation specifies:
+
+- intended bastion within 14 chunks
+- intended bastion is at least 10 chunks closer than another bastion to 0,0
+- open terrain check
+- 3+ iron and 5+ obsidian in relevant loot
+- stables bastion gap requirements
+
+Adapt these checks to actual 26.2 Nether generation.
+
+### Fortress
+
+Check:
+
+- fortress within approximately 16 chunks of intended bastion
+- viable/open route
+- blaze access
+
+Do NOT assume the exact 1.16.1 terrain API.
+
+---
+
+# 18. STANDARDIZED RNG
+
+Implement MCSR Ranked-style RNG standardization.
+
+Reference the current Ranked RNG specification.
+
+The default:
+
+```text
+RNG Seed = Overworld Seed
+```
+
+Allow an optional custom RNG seed for testing/private configurations.
+
+The same:
+
+```text
+RNG Seed
+```
+
+must produce the same standardized outcomes.
+
+---
+
+# 19. PIGLIN BARTERING
+
+This is critical.
+
+Use the documented Ranked-style behavior.
+
+Current Ranked documentation specifies:
+
+- Obsidian barter chance increased by approximately 35%
+- At least 6 Obsidian guaranteed every 72 barters
+- Exactly 3 Ender Pearl trades guaranteed every 72 barters
+- Same trade order for players using the same RNG seed
+
+Implement this deterministically in 26.2.
+
+Do NOT simply give the player unlimited pearls/obsidian.
+
+Do NOT arbitrarily force every possible loot item.
+
+The goal is:
+
+```text
+standardized + reproducible + viable
+```
+
+not:
+
+```text
+free loot
+```
+
+---
+
+# 20. "PIGLINS MUST PROVIDE WHAT IS NECESSARY"
+
+Interpret this carefully.
+
+The requirement is:
+
+> An accepted Completable seed must have a viable progression under the standardized Ranked-style RNG system.
+
+This does NOT mean:
+
+> Force Piglins to give whatever item the player wants.
+
+Instead:
+
+```text
+Seed Filter
++
+Standardized Piglin RNG
++
+Completion Validator
+```
+
+must work together.
+
+The validator should know what deterministic bartering outcomes the player will receive.
+
+If the intended route requires pearls, the standardized sequence must provide the documented pearl opportunities.
+
+If obsidian is needed, the standardized sequence must provide the documented obsidian guarantee.
+
+Do not invent additional Ranked guarantees.
+
+---
+
+# 21. OTHER STANDARDIZED RNG
+
+Where applicable, implement the current Ranked-style standardization for:
+
+### Mob drops
+
+- animal food
+- Hoglin food
+- Blaze Rods
+- Ender Pearls
+- Iron Golem drops
+
+### Block drops
+
+- Dead Bush sticks
+- Leaves apples
+- Gravel flint
+- Gilded Blackstone
+- Glowstone
+- other documented standardized block drops
+
+### Player/item behavior
+
+- Rotten Flesh hunger effects
+- Suspicious Stew effects
+- Sheep shearing
+- Endermite pearl throws
+- Eye of Ender break chances
+- second Eye throw behavior
+
+### Mob behavior
+
+Where applicable:
+
+- villager trades
+- drowned tridents
+- Elder Guardian effects
+- Desert Temple mob spawning
+- Bastion mob spawning
+- Zombified Piglin pathfinding
+- Magma Cube splitting
+- Ghast spawning restrictions
+
+### Blaze spawning
+
+Implement the documented deterministic blaze-spawner behavior as far as the 26.2 API permits:
+
+- deterministic spawn positions
+- deterministic spawn timing
+- deterministic RNG
+
+Do not fake entities visually.
+
+---
+
+# 22. PORTAL STANDARDIZATION
+
+Implement the relevant Ranked-style portal behavior where applicable.
+
+Standardize:
+
+- initial Nether entry location
+- portal coordinate mapping
+- Y-level behavior
+- first blind portal behavior
+- relevant portal travel calculations
+
+Adapt the implementation to actual 26.2 portal APIs.
+
+Do NOT copy old NMS classes from 1.16.1.
+
+---
+
+# 23. END / DRAGON
+
+Where feasible, implement standardized RNG for:
+
+- End Portal frame fill state
+- Dragon target height offsets
+- Dragon strafe rolls
+- Dragon perch rolls
+- relevant deterministic behavior
+
+The goal is reproducibility for the same RNG seed.
+
+---
+
+# 24. FSG-STYLE IN-GAME UI
+
+Create an actual FSG-style GUI.
+
+The user should NOT have to configure the mod exclusively through commands/config files.
+
+Add a button to an appropriate title/main menu screen.
+
+Example:
+
+```text
+[FSG]
+```
+
+Clicking it opens:
+
+```text
+FSG Seed Filter
+```
+
+---
+
+# 25. FSG UI OPTIONS
+
+Include:
+
+```text
+Seed Type:
+[ Any ▼ ]
+
+Filter Profile:
+[ Completable ▼ ]
+
+Standardized RNG:
+[ ON ]
+
+RNG Seed:
+[ Same as World Seed ]
+
+Require Completable Seed:
+[ ON ]
+
+Natural Lava:
+[ Required / Fallback ]
+
+Artificial Lava Pools:
+[ 3 ]
+
+Maximum Lava Distance:
+[ 32 ]
+
+Background Filtering:
+[ ON ]
+
+Use Seed Cache:
+[ ON ]
+```
+
+Buttons:
+
+```text
+[Start Searching]
+[Pause]
+[Stop]
+[Clear Cache]
+[Filter Settings]
+```
+
+---
+
+# 26. SEARCH STATUS UI
+
+While filtering, display something like:
+
+```text
+FSG
+
+Searching for seed...
+
+Seeds Tested: 12,482
+Seeds Rejected: 12,479
+Seeds Passed Filter: 3
+Completable: 1
+
+Current Seed:
+- Overworld ✓
+- Structures ✓
+- Lava ✓
+- Nether ✓
+- RNG ✓
+- Completion ✓
+
+Searching in background...
+```
+
+Do not block the game.
+
+---
+
+# 27. ACCEPTED SEED SCREEN
+
+When a seed passes:
+
+```text
+SEED ACCEPTED
+
+Seed: 123456789
+
+Seed Type:
+Village
+
+Filter:
+Completable
+
+Natural Lava:
+No
+
+Artificial Lava:
+3 pools generated
+
+RNG:
+Standardized
+
+Bastion:
+✓
+
+Fortress:
+✓
+
+Blaze Progression:
+✓
+
+Pearl Progression:
+✓
+
+Stronghold:
+✓
+
+Completion:
+VERIFIED / NOT VERIFIED
+
+[Play Seed]
+```
+
+The accepted seed should then be passed into the Atum reset workflow.
+
+---
+
+# 28. ATUM INTEGRATION
+
+This must be a real integration.
+
+Study the architecture of DuncanRuns FSG.
+
+FSG's purpose is to override Atum's seed so Atum can repeatedly reset into filtered seeds.
+
+Implement the equivalent architecture for 26.2.
+
+The workflow must be:
+
+```text
+Atum Reset
+ ↓
+Our FSG integration receives reset request
+ ↓
+SeedSearchManager searches locally
+ ↓
+Accepted seed selected
+ ↓
+Atum/world reset receives accepted seed
+ ↓
+World launches
+```
+
+Do NOT make Atum integration merely cosmetic.
+
+Do NOT just add a `/speedrun filter` command and call the project finished.
+
+---
+
+# 29. SEED CACHE / SEED BANK
+
+Implement local persistent storage.
+
+Store:
+
+```text
+seed
+seed type
+filter profile
+RNG seed
+filter result
+completion result
+lava locations
+artificial lava locations
+bastion information
+fortress information
+stronghold information
+timestamp
+verification status
+```
+
+Use a local database/file format.
+
+The cache should prevent repeatedly analyzing the same seed.
+
+Provide:
+
+```text
+Use Cache
+Clear Cache
+Export
+Import
+```
+
+where practical.
+
+---
+
+# 30. BACKGROUND SEARCH
+
+Filtering MUST run asynchronously.
+
+Architecture should use a safe worker system.
+
+Example:
+
+```text
+SeedSearchExecutor
+WorkerPool
+CancellationToken
+ProgressReporter
+```
+
+The Minecraft client thread should only receive safe results.
+
+Never perform massive seed scanning synchronously on the render thread.
+
+---
+
+# 31. DEBUG MODE
+
+Add a developer/debug screen that shows exactly why a seed passed or failed.
+
+Example:
+
+```text
+Seed: 847392019
+
+OVERWORLD
+Village: PASS
+Iron: 8 PASS
+Food: PASS
+River: PASS
+Lava: FALLBACK
+Artificial Pools: 3 PASS
+
+NETHER
+Bastion: PASS
+Bastion Distance: 11 chunks
+Bastion Loot: PASS
+Fortress: PASS
+Fortress Distance: 13 chunks
+
+RNG
+Piglin Sequence: PASS
+Pearl Trades: 3 / 72
+Obsidian: 7 / 72
+Blaze RNG: PASS
+
+COMPLETION
+Resources: PASS
+Portal: PASS
+Blaze: PASS
+Pearls: PASS
+Stronghold: PASS
+End: PASS
+
+FINAL:
+COMPLETABLE
+```
+
+If rejected:
+
+```text
+REJECTED
+
+Reason:
+No viable fortress route.
+
+OR:
+
+Rejected:
+Insufficient standardized pearl progression.
+
+OR:
+
+Rejected:
+No valid resource route.
+
+OR:
+
+NOT VERIFIED:
+26.2 loot API unavailable.
+```
+
+Never hide failures.
+
+---
+
+# 32. IMPORTANT: NO FAKE VERIFICATION
+
+This project must never report:
+
+```text
+PASS
+```
+
+when the underlying Minecraft 26.2 worldgen was not actually checked.
+
+Do NOT create placeholder methods such as:
+
+```java
+return true;
+```
+
+for worldgen.
+
+Do NOT hardcode:
+
+```text
+village exists
+bastion exists
+lava exists
+fortress exists
+```
+
+without checking actual generated data.
+
+If an API is unknown:
+
+```text
+TODO
+NOT VERIFIED
+```
+
+is better than a fake implementation.
+
+---
+
+# 33. TESTING
+
+Create automated tests for:
+
+### Seed filtering
+
+- deterministic seed generation
+- seed rejection
+- seed acceptance
+
+### Lava
+
+- natural lava detection
+- artificial fallback
+- exactly 3 pools
+- maximum 32-block distance
+- deterministic pool positions
+- invalid terrain rejection
+
+### RNG
+
+- same seed → same RNG sequence
+- different seed → different deterministic sequence
+- 72 barter cycle
+- exactly 3 pearl trades
+- minimum 6 obsidian
+- standardized mob drops
+- standardized blaze RNG
+
+### Completion
+
+- valid seed passes
+- missing blaze progression fails
+- missing pearl progression fails
+- missing portal access fails
+- invalid Nether route fails
+- unverified mechanics produce NOT VERIFIED
+
+### Atum
+
+- reset event detected
+- accepted seed injected
+- rejected seeds continue searching
+- accepted seed stops search
+- world starts with correct seed
+
+---
+
+# 34. BUILD REQUIREMENTS
+
+Target:
+
+```text
+Minecraft 26.2
+Fabric
+Java version required by Minecraft 26.2
+```
+
+Use mappings appropriate for 26.2.
+
+Do NOT import old 1.16.1 classes simply because they have familiar names.
+
+Run:
+
+```text
+./gradlew build
+```
+
+and fix all compilation errors.
+
+Then run:
+
+```text
+./gradlew test
+```
+
+and ensure tests pass.
+
+---
+
+# 35. REAL CLIENT VERIFICATION
+
+Do not stop after compilation.
+
+Launch an actual Minecraft 26.2 client.
+
+Verify:
+
+1. Minecraft launches.
+2. Mod loads.
+3. FSG button appears.
+4. FSG screen opens.
+5. Filter can be selected.
+6. Background searching works.
+7. Game remains responsive.
+8. Candidate seeds are actually analyzed.
+9. Natural lava is detected.
+10. Artificial lava pools are actually generated when necessary.
+11. Exactly 3 artificial pools are generated.
+12. Pools are within 32 blocks.
+13. Accepted seed is passed into the reset workflow.
+14. Atum starts the accepted world.
+15. The generated world actually contains the expected structures.
+16. Piglin RNG behaves deterministically.
+17. The completion validator reports its actual result.
+
+Capture/log enough information to diagnose failures.
+
+---
+
+# 36. IMPORTANT DISTINCTION
+
+This project has FOUR separate systems:
+
+```text
+1. SEED FILTER
+   Finds good world seeds.
+
+2. WORLDGEN / LAVA SYSTEM
+   Ensures modern 26.2 terrain provides usable speedrun access.
+
+3. STANDARDIZED RNG
+   Makes relevant gameplay RNG deterministic and Ranked-style.
+
+4. COMPLETION VALIDATOR
+   Determines whether the filtered seed has a viable route to completing the game.
+```
+
+Do not combine everything into one giant method.
+
+Keep these systems modular.
+
+---
+
+# 37. FINAL USER EXPERIENCE
+
+The finished experience should feel like:
+
+```text
+Launch Minecraft
+       ↓
+Press FSG
+       ↓
+Choose "Completable"
+       ↓
+Choose seed type
+       ↓
+Press Start
+       ↓
+Atum begins resetting
+       ↓
+FSG searches locally
+       ↓
+Bad seeds are rejected automatically
+       ↓
+Good seeds are analyzed
+       ↓
+If no natural lava:
+    3 deterministic artificial lava pools
+    generated within 32 blocks
+       ↓
+Standardized RNG is applied
+       ↓
+Piglin/barter progression is checked
+       ↓
+Nether progression is checked
+       ↓
+Completion viability is checked
+       ↓
+Accepted seed
+       ↓
+Atum launches it
+       ↓
+Player speedruns
+```
+
+The objective is NOT merely:
+
+> "find a seed with a village."
+
+The objective is:
+
+> **Find a modern Minecraft 26.2 seed that satisfies the selected MCSR Ranked-style filtering requirements, has deterministic standardized RNG, has usable lava access (natural or a deterministic 3-pool fallback within 32 blocks), has a viable Overworld → Nether → Blaze → Pearl → Stronghold → End progression, and can actually be launched through the FSG/Atum workflow.**
+
+---
+
+# 38. IMPLEMENTATION PRIORITY
+
+Implement in this order:
+
+### Phase 1
+26.2 worldgen adapter
+
+### Phase 2
+Local seed search engine
+
+### Phase 3
+Overworld seed filters
+
+### Phase 4
+Modern lava-pool analyzer
+
+### Phase 5
+3-pool artificial lava fallback
+
+### Phase 6
+Nether bastion/fortress analyzer
+
+### Phase 7
+Standardized RNG
+
+### Phase 8
+Piglin barter sequence
+
+### Phase 9
+CompletionValidator
+
+### Phase 10
+Seed cache
+
+### Phase 11
+FSG GUI
+
+### Phase 12
+Atum integration
+
+### Phase 13
+Full client testing
+
+Do not mark the project complete until all phases actually work in Minecraft 26.2.
+
+---
+
+# REFERENCE MATERIAL
+
+Use the current MCSR Ranked Wiki as the behavioral reference for Ranked-style filtering and RNG:
+
+Filtered Seeds:
+https://wiki.mcsrranked.com/gameplay/seed
+
+RNG Standardization:
+https://wiki.mcsrranked.com/gameplay/rng
+
+Use DuncanRuns FSG as the architectural reference for the local filtered-seed + Atum workflow:
+
+https://github.com/DuncanRuns/FSG-Mod
+
+IMPORTANT:
+These references describe behavior/concepts. They are NOT permission to blindly copy Minecraft 1.16.1 implementation details into 26.2.
+
+Implement the equivalent functionality using the actual Minecraft 26.2 APIs.

@@ -1,0 +1,97 @@
+package dev.fsg262.cache;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Small local TSV cache. Each field is base64 encoded so debug summaries may
+ * contain spaces or punctuation without corrupting the file.
+ */
+public final class SeedCache {
+    private final Map<SeedCacheKey, CachedSeed> entries = new LinkedHashMap<>();
+
+    public synchronized Optional<CachedSeed> get(SeedCacheKey key) {
+        return Optional.ofNullable(entries.get(key));
+    }
+
+    public synchronized void put(CachedSeed entry) {
+        entries.put(entry.key(), entry);
+    }
+
+    public synchronized int size() {
+        return entries.size();
+    }
+
+    public synchronized void clear() {
+        entries.clear();
+    }
+
+    public synchronized void save(Path path) throws IOException {
+        var lines = entries.values().stream().map(this::encode).toList();
+        Files.createDirectories(path.toAbsolutePath().getParent());
+        Files.write(path, lines, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+    }
+
+    public synchronized void load(Path path) throws IOException {
+        if (!Files.exists(path)) return;
+        for (var line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) put(decode(line));
+        }
+    }
+
+    public synchronized void exportTo(Path path) throws IOException {
+        save(path);
+    }
+
+    public synchronized void importFrom(Path path) throws IOException {
+        load(path);
+    }
+
+    private String encode(CachedSeed entry) {
+        var key = entry.key();
+        return String.join("\t",
+                Long.toString(key.seed()),
+                key.seedType().name(),
+                b64(key.profileName()),
+                Long.toString(key.rngSeed()),
+                entry.filterResult().name(),
+                entry.completionResult().name(),
+                entry.lavaResult().name(),
+                b64(entry.overworldSummary()),
+                b64(entry.netherSummary()),
+                b64(entry.strongholdSummary()),
+                entry.timestamp().toString());
+    }
+
+    private CachedSeed decode(String line) {
+        var parts = line.split("\t", -1);
+        if (parts.length != 11) throw new IllegalArgumentException("Invalid FSG seed cache row");
+        var key = new SeedCacheKey(Long.parseLong(parts[0]),
+                dev.fsg262.filter.SeedTypeChoice.valueOf(parts[1]),
+                unb64(parts[2]), Long.parseLong(parts[3]));
+        return new CachedSeed(key,
+                dev.fsg262.completion.VerificationStatus.valueOf(parts[4]),
+                dev.fsg262.completion.VerificationStatus.valueOf(parts[5]),
+                dev.fsg262.completion.VerificationStatus.valueOf(parts[6]),
+                unb64(parts[7]), unb64(parts[8]), unb64(parts[9]),
+                Instant.parse(parts[10]));
+    }
+
+    private String b64(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String unb64(String value) {
+        return new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
+    }
+}

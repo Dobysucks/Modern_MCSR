@@ -84,6 +84,33 @@ public record FilterProfile(
         );
     }
 
+    /**
+     * Completable uses the strict structure thresholds and requires the
+     * separate CompletionValidator to return PASS before accepting a seed.
+     */
+    public static FilterProfile completable() {
+        return strictRankedStyle().named("COMPLETABLE", 3L);
+    }
+
+    public FilterProfile named(String newName, long newFilterVersion) {
+        return new FilterProfile(
+                newName, enabledStartTypes,
+                villageMaxDistanceChunks, shipwreckMaxDistanceChunks,
+                desertTempleMaxDistanceChunks, ruinedPortalMaxDistanceChunks,
+                buriedTreasureMaxDistanceChunks, minimumIron,
+                ironWithDiamonds, minimumDiamonds, riverMaxDistanceChunks,
+                minimumLavaPools, villageBlacksmithObsidian,
+                taigaBlacksmithObsidian, shipwreckMagmaRavines,
+                buriedTreasureMagmaRavines, ruinedPortalIronNuggets,
+                bastionMaxDistanceFromOriginChunks,
+                bastionMinimumSeparationChunks, bastionMinimumIron,
+                bastionMinimumObsidian, stableMinimumGoodGaps,
+                fortressMaxDistanceFromBastionChunks, barterWindowSize,
+                barterMinimumObsidianPerWindow,
+                barterExactPearlTradesPerWindow, newFilterVersion
+        );
+    }
+
     public static Builder customBuilder() {
         return new Builder(strictRankedStyle());
     }
