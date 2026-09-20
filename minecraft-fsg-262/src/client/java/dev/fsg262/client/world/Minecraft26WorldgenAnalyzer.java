@@ -4,6 +4,9 @@ import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.filter.StartEvaluationInput;
 import dev.fsg262.filter.StartType;
 import dev.fsg262.filter.WorldGenerationAnalyzer;
+import dev.fsg262.evaluation.EvaluatorEvidenceProvider;
+import dev.fsg262.evaluation.TerrainEvidence;
+import dev.fsg262.completion.VerificationStatus;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
@@ -38,7 +41,7 @@ import java.util.function.BooleanSupplier;
  * queries are real 26.2 queries. Loot and generated block-entity inspection
  * remain unavailable until an in-memory structure-generation level is added.
  */
-public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer {
+public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyzer, EvaluatorEvidenceProvider {
     private final WorldCreationContext context;
     private final StructureTemplateManager templateManager;
     private final RealChunkGenerationHarness generationHarness;
@@ -50,6 +53,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             StructureGenerationInspectionResult.unavailable(0, "Not inspected");
     private volatile GeneratedBlockSummary lastTerrainInspection =
             GeneratedBlockSummary.unavailable("Not inspected");
+    private volatile long lastTerrainSeed;
 
     public Minecraft26WorldgenAnalyzer(WorldCreationContext context) {
         this(context, null);
@@ -93,6 +97,7 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
             inspectStructure(seed, startType, profile, () -> false);
         }
         lastTerrainInspection = inspectGeneratedTerrain(seed, false, found.chunk(), () -> false);
+        lastTerrainSeed = seed;
 
         var type = stem.type().value();
         var height = LevelHeightAccessor.create(type.minY(), type.height());
@@ -153,6 +158,29 @@ public final class Minecraft26WorldgenAnalyzer implements WorldGenerationAnalyze
 
     public GeneratedBlockSummary lastTerrainInspection() {
         return lastTerrainInspection;
+    }
+
+    @Override
+    public TerrainEvidence terrain(long seed) {
+        if (lastTerrainSeed != seed || !lastTerrainInspection.verified()) {
+            lastTerrainInspection = inspectGeneratedTerrain(seed, false, new ChunkPos(0, 0), () -> false);
+            lastTerrainSeed = seed;
+        }
+        var summary = lastTerrainInspection;
+        if (!summary.verified()) return TerrainEvidence.unavailable(summary.failureReason());
+        return new TerrainEvidence(true, "chunk=" + summary.chunkX() + "," + summary.chunkZ()
+                + " scanned=" + summary.scannedBlocks()
+                + " blockTypes=" + summary.blockCounts().size()
+                + " lavaSources=" + summary.lavaSources().size()
+                + " blockEntities=" + summary.blockEntityCount());
+    }
+
+    @Override
+    public VerificationStatus netherGeometry(long seed) {
+        var bastion = inspectNetherStructure(seed, true, false, () -> false);
+        if (bastion.verified()) return VerificationStatus.PASS;
+        var fortress = inspectNetherStructure(seed, false, true, () -> false);
+        return fortress.verified() ? VerificationStatus.PASS : VerificationStatus.NOT_VERIFIED;
     }
 
     /**

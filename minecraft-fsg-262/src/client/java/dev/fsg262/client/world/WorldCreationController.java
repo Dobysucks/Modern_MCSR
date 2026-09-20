@@ -1,6 +1,9 @@
 package dev.fsg262.client.world;
 
 import dev.fsg262.filter.FilterProfile;
+import dev.fsg262.evaluation.EvaluationResult;
+import dev.fsg262.evaluation.EvaluatorOrchestrator;
+import dev.fsg262.evaluation.EvaluatorRuntime;
 import dev.fsg262.search.CandidateEvaluation;
 import dev.fsg262.search.LocalFilterResult;
 import dev.fsg262.search.LocalSeedFilter;
@@ -34,6 +37,7 @@ public final class WorldCreationController implements AutoCloseable {
     private final AtomicReference<Long> acceptedSeed = new AtomicReference<>();
     private final AtomicReference<SeedSearchProgress> progress = new AtomicReference<>();
     private volatile String status = "Idle";
+    private volatile EvaluationResult lastEvaluation;
     private volatile WorldCreationSettings settings = loadSettings();
 
     public static WorldCreationController instance() {
@@ -55,6 +59,10 @@ public final class WorldCreationController implements AutoCloseable {
 
     public String status() {
         return status;
+    }
+
+    public EvaluationResult lastEvaluation() {
+        return lastEvaluation;
     }
 
     public boolean hasAcceptedSeed() {
@@ -95,8 +103,9 @@ public final class WorldCreationController implements AutoCloseable {
                 null,
                 Minecraft.getInstance().getFixerUpper(),
                 worldgenContext.worldgenLoadContext().lookupOrThrow(Registries.BLOCK));
-        var localFilter = new LocalSeedFilter(
-                new Minecraft26WorldgenAnalyzer(worldgenContext, templateManager));
+        var analyzer = new Minecraft26WorldgenAnalyzer(worldgenContext, templateManager);
+        EvaluatorRuntime.install(analyzer, analyzer);
+        var localFilter = new LocalSeedFilter(analyzer);
         var request = new SeedSearchRequest(
                 screen.getUiState().getSeed().hashCode(),
                 currentSettings.seedType(), profile, 100_000);
@@ -113,8 +122,15 @@ public final class WorldCreationController implements AutoCloseable {
         var handle = searchManager.search(request, evaluator, progressReporter, seed -> {
             acceptedSeed.set(seed);
             screen.getUiState().setSeed(Long.toString(seed));
-            statusReporter.accept("ACCEPTED SEED FOUND: " + seed);
-            status = "Seed Found";
+            lastEvaluation = new EvaluatorOrchestrator(analyzer, analyzer)
+                    .evaluate(seed, profile);
+            String evidence = lastEvaluation.stages().stream()
+                    .filter(stage -> stage.status() != dev.fsg262.completion.VerificationStatus.PASS)
+                    .map(stage -> stage.name() + "=" + stage.status())
+                    .findFirst().orElse("all stages passed");
+            statusReporter.accept("ACCEPTED SEED FOUND: " + seed
+                    + " · FINAL " + lastEvaluation.status() + " · " + evidence);
+            status = "Seed Found · " + lastEvaluation.status() + " · " + evidence;
         });
         activeSearch.set(handle);
         status = "Searching";

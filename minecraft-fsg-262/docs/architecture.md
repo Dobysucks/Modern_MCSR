@@ -48,6 +48,22 @@ start evidence usable by callers. The harness is intentionally bounded by the
 caller selecting individual `ChunkPos` values rather than bootstrapping a
 persistent server or touching Create World UI code.
 
+`ServerLevelChunkHarness` is the server-side runtime adapter when a legitimate
+temporary server has already been bootstrapped. It requests
+`ServerChunkCache.getChunkFuture(..., ChunkStatus.FULL, true)` and returns
+actual `LevelChunk` instances, including block states, fluids, structure
+starts, and generated block entities. It never casts a `ProtoChunk` into a
+`LevelChunk`.
+
+The 26.2 `MinecraftServer` constructor requires a `WorldStem`,
+`LevelStorageAccess`, pack repository, data fixer, services, and load listener.
+`WorldStem` itself is produced by the asynchronous `WorldLoader.load` pack/data
+reload path. A client `WorldCreationContext` supplies worldgen registries but
+does not supply those server resources, so constructing that lifecycle inside
+the UI analyzer would be incomplete and unsafe. The server adapter therefore
+accepts a real `ServerLevel` from the caller's bootstrap boundary; this is the
+precise unsupported boundary rather than a fake server.
+
 ## 26.2 compatibility surface
 
 The build uses the official Fabric 26.2 template values:

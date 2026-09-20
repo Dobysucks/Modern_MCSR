@@ -54,6 +54,10 @@ public final class EvaluatorOrchestrator {
         NetherEvaluation nether = evidence.nether(seed, profile);
         VerificationStatus netherStatus = nether == null ? VerificationStatus.NOT_VERIFIED
                 : (nether.passed() ? VerificationStatus.PASS : VerificationStatus.FAIL);
+        VerificationStatus geometryStatus = evidence.netherGeometry(seed);
+        if (nether == null && geometryStatus != VerificationStatus.NOT_VERIFIED) {
+            netherStatus = geometryStatus;
+        }
         stages.add(new EvaluationStage("Nether geometry", netherStatus,
                 nether == null ? "adapter did not provide geometry" : summarizeNether(nether)));
 

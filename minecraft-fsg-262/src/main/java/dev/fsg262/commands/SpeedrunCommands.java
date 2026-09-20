@@ -4,10 +4,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import dev.fsg262.config.FsgConfig;
-import dev.fsg262.evaluation.EvaluatorOrchestrator;
+import dev.fsg262.evaluation.EvaluatorRuntime;
 import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.filter.SeedFilter;
-import dev.fsg262.filter.UnverifiedWorldGenerationAnalyzer;
 import dev.fsg262.rng.LegacyPiglinBartering;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -65,7 +64,7 @@ public final class SpeedrunCommands {
 
     private static int analyze(CommandContext<CommandSourceStack> context) {
         long seed = LongArgumentType.getLong(context, "seed");
-        var result = new EvaluatorOrchestrator(new UnverifiedWorldGenerationAnalyzer())
+        var result = EvaluatorRuntime.orchestrator()
                 .evaluate(seed, FilterProfile.strictRankedStyle());
         return reply(context, result.report());
     }

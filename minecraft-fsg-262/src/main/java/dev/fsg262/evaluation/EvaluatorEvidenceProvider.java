@@ -3,6 +3,7 @@ package dev.fsg262.evaluation;
 import dev.fsg262.completion.CompletionEvidence;
 import dev.fsg262.filter.FilterProfile;
 import dev.fsg262.nether.NetherEvaluation;
+import dev.fsg262.completion.VerificationStatus;
 
 /**
  * Optional bridge for a client-side world-generation adapter.  The common
@@ -16,6 +17,10 @@ public interface EvaluatorEvidenceProvider {
 
     default NetherEvaluation nether(long seed, FilterProfile profile) {
         return null;
+    }
+
+    default VerificationStatus netherGeometry(long seed) {
+        return VerificationStatus.NOT_VERIFIED;
     }
 
     default CompletionEvidence completion(long seed) {
