@@ -5,10 +5,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SeedSearchHandle {
     private final AtomicBoolean cancelled;
+    private final AtomicBoolean paused;
     private final Future<?> future;
 
-    SeedSearchHandle(AtomicBoolean cancelled, Future<?> future) {
+    SeedSearchHandle(AtomicBoolean cancelled, AtomicBoolean paused, Future<?> future) {
         this.cancelled = cancelled;
+        this.paused = paused;
         this.future = future;
     }
 
@@ -19,6 +21,18 @@ public final class SeedSearchHandle {
 
     public boolean isCancelled() {
         return cancelled.get();
+    }
+
+    public void pause() {
+        if (!isDone()) paused.set(true);
+    }
+
+    public void resume() {
+        paused.set(false);
+    }
+
+    public boolean isPaused() {
+        return paused.get();
     }
 
     public boolean isDone() {

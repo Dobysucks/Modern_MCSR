@@ -8,8 +8,10 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["dev.fsg262.Fsg262"]
+    "main": ["dev.fsg262.Fsg262"],
+    "client": ["dev.fsg262.FsgClient"]
   },
+  "mixins": ["fsg262.client.mixins.json"],
   "depends": {
     "fabricloader": ">=0.19.5",
     "minecraft": "~26.2",

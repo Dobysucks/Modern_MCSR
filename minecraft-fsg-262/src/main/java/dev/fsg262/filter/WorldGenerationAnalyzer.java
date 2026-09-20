@@ -9,4 +9,8 @@ package dev.fsg262.filter;
  */
 public interface WorldGenerationAnalyzer {
     StartEvaluationInput analyzeOverworld(long seed, StartType startType, FilterProfile profile);
+
+    default boolean isVerified() {
+        return false;
+    }
 }

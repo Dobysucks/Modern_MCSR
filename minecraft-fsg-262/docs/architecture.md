@@ -40,16 +40,22 @@ The build uses the official Fabric 26.2 template values:
 - Mojang mappings (Yarn is not used for 26.1+)
 - Java `25`
 
-The Fabric entrypoint and command callback are the only game-facing code in
-the initial slice. The following adapter work is deliberately isolated and
-must be implemented against locally resolved 26.2 names before merging:
+The Fabric entrypoint, command callback, Create New World controls, and screen
+accessor are the game-facing code in the current slice. The following adapter work is
+deliberately isolated and must be implemented against locally resolved 26.2
+names before merging:
 
 - biome distance sampling;
 - intended structure placement and variant identification;
 - loot table analysis;
 - terrain/open-path sampling;
 - structure-specific block entity and obstruction checks;
-- client configuration screen and RNG mixins.
+- persistent client configuration and RNG mixins.
+
+The FSG screen is deliberately non-blocking and uses the background search
+boundary, but its START action remains a visible `NOT VERIFIED` status until a
+real world-generation analyzer is supplied. This prevents a UI from turning
+sentinel structure facts into accepted seeds.
 
 ## Coordinate model
 
