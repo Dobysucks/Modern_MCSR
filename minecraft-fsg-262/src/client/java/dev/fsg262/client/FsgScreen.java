@@ -1,94 +1,120 @@
 package dev.fsg262.client;
 
-import dev.fsg262.cache.SeedCache;
+import dev.fsg262.client.world.WorldCreationController;
+import dev.fsg262.client.world.WorldCreationSettings;
+import dev.fsg262.filter.FilterProfile;
+import dev.fsg262.filter.SeedTypeChoice;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
 
-/**
- * Small, client-only control surface. Search work remains in the background
- * manager; this screen deliberately never performs world generation on the
- * render thread.
- */
 public final class FsgScreen extends Screen {
+    private static final WorldCreationController CONTROLLER = WorldCreationController.instance();
     private final Screen parent;
-    private Button seedType;
-    private Button profile;
-    private Button rng;
-    private Button completable;
-    private String selectedSeedType = "ANY";
-    private String selectedProfile = "COMPLETABLE";
-    private boolean standardizedRng = true;
-    private boolean requireCompletable = true;
-    private String status = "Idle (world-generation adapter: NOT VERIFIED)";
+    private String status = "Idle";
 
     public FsgScreen(Screen parent) {
-        super(Component.literal("FSG Seed Filter"));
+        super(Component.literal("MCSR"));
         this.parent = parent;
     }
 
     public static Button openButton(int x, int y, Runnable action) {
-        return Button.builder(Component.literal("FSG Seed Filter"), button -> action.run())
-                .bounds(x, y, 200, 20)
-                .build();
+        return Button.builder(Component.literal("MCSR"), button -> action.run())
+                .bounds(x, y, 200, 20).build();
     }
 
     @Override
     protected void init() {
-        int center = width / 2;
-        seedType = addRenderableWidget(Button.builder(label("Seed Type: ", selectedSeedType),
-                        button -> cycleSeedType())
-                .bounds(center - 100, 45, 200, 20).build());
-        profile = addRenderableWidget(Button.builder(label("Profile: ", selectedProfile),
-                        button -> cycleProfile())
-                .bounds(center - 100, 70, 200, 20).build());
-        rng = addRenderableWidget(Button.builder(label("Standardized RNG: ", standardizedRng ? "ON" : "OFF"),
-                        button -> {
-                            standardizedRng = !standardizedRng;
-                            rng.setMessage(label("Standardized RNG: ", standardizedRng ? "ON" : "OFF"));
-                        })
-                .bounds(center - 100, 95, 200, 20).build());
-        completable = addRenderableWidget(Button.builder(
-                        label("Require Completable: ", requireCompletable ? "ON" : "OFF"),
-                        button -> {
-                            requireCompletable = !requireCompletable;
-                            completable.setMessage(label("Require Completable: ",
-                                    requireCompletable ? "ON" : "OFF"));
-                        })
-                .bounds(center - 100, 120, 200, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("START SEARCH"), button -> {
-                    status = "Search requested; awaiting a verified 26.2 world-generation adapter";
-                }).bounds(center - 100, 155, 200, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("CLEAR CACHE"), button -> {
-                    status = "Cache clear requested (version " + SeedCache.FILTER_VERSION + ")";
-                }).bounds(center - 100, 180, 200, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("DONE"), button -> minecraft.setScreenAndShow(parent))
-                .bounds(center - 100, 215, 200, 20).build());
+        addRenderableWidget(toggle("Status: ", CONTROLLER.settings().enabled(), current ->
+                update(current, !current.enabled(), current.seedType(), current.profileName(),
+                        current.completable(), current.standardizedRng(), current.customRngSeed())));
+        addRenderableWidget(cycle("Seed Type: ", CONTROLLER.settings().seedType().name(), button -> {
+            var current = CONTROLLER.settings();
+            update(button, current, nextSeedType(current.seedType()), current.profileName(),
+                    current.completable(), current.standardizedRng(), current.customRngSeed());
+        }));
+        addRenderableWidget(cycle("Profile: ", CONTROLLER.settings().profileName(), button -> {
+            var current = CONTROLLER.settings();
+            update(button, current, current.seedType(), nextProfile(current.profileName()),
+                    current.completable(), current.standardizedRng(), current.customRngSeed());
+        }));
+        addRenderableWidget(toggle("Completable: ", CONTROLLER.settings().completable(), current ->
+                update(current, current.enabled(), current.seedType(), current.profileName(),
+                        !current.completable(), current.standardizedRng(), current.customRngSeed())));
+        addRenderableWidget(toggle("Standardized RNG: ", CONTROLLER.settings().standardizedRng(), current ->
+                update(current, current.enabled(), current.seedType(), current.profileName(),
+                        current.completable(), !current.standardizedRng(), current.customRngSeed())));
+        addRenderableWidget(cycle("RNG Seed: ", rngLabel(), button -> {
+            var current = CONTROLLER.settings();
+            update(button, current, current.seedType(), current.profileName(),
+                    current.completable(), current.standardizedRng(),
+                    current.customRngSeed() == null ? 0L : null);
+        }));
+        addRenderableWidget(Button.builder(Component.literal("START FILTERING"), button -> startSearch())
+                .bounds(width / 2 - 100, 195, 200, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("STOP FILTERING"), button -> {
+            CONTROLLER.cancel();
+            status = "Stopped";
+        }).bounds(width / 2 - 100, 220, 200, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("BACK"), button -> minecraft.setScreenAndShow(parent))
+                .bounds(width / 2 - 100, height - 35, 200, 20).build());
     }
 
-    private void cycleSeedType() {
-        String[] values = {"ANY", "VILLAGE", "SHIPWRECK", "DESERT TEMPLE",
-                "RUINED PORTAL", "BURIED TREASURE"};
-        selectedSeedType = next(values, selectedSeedType);
-        seedType.setMessage(label("Seed Type: ", selectedSeedType));
+    private Button toggle(String prefix, boolean value, java.util.function.Consumer<WorldCreationSettings> action) {
+        return Button.builder(Component.literal(prefix + (value ? "ON" : "OFF")), button -> {
+            action.accept(CONTROLLER.settings());
+            button.setMessage(Component.literal(prefix + (!value ? "ON" : "OFF")));
+        }).bounds(width / 2 - 100, 45 + 25 * children().size(), 200, 20).build();
     }
 
-    private void cycleProfile() {
-        String[] values = {"COMPLETABLE", "STRICT", "BALANCED", "CUSTOM"};
-        selectedProfile = next(values, selectedProfile);
-        profile.setMessage(label("Profile: ", selectedProfile));
+    private Button cycle(String prefix, String value, java.util.function.Consumer<Button> action) {
+        return Button.builder(Component.literal(prefix + value), button -> action.accept(button))
+                .bounds(width / 2 - 100, 45 + 25 * children().size(), 200, 20).build();
     }
 
-    private String next(String[] values, String current) {
-        for (int i = 0; i < values.length; i++) {
-            if (values[i].equals(current)) return values[(i + 1) % values.length];
+    private void update(WorldCreationSettings current, boolean enabled, SeedTypeChoice type,
+                        String profile, boolean completable, boolean rng, Long rngSeed) {
+        CONTROLLER.updateSettings(new WorldCreationSettings(enabled, type, profile,
+                completable, rng, rngSeed, current.backgroundFiltering()));
+    }
+
+    private void update(Button button, WorldCreationSettings current, SeedTypeChoice type,
+                        String profile, boolean completable, boolean rng, Long rngSeed) {
+        update(current, current.enabled(), type, profile, completable, rng, rngSeed);
+        button.setMessage(Component.literal(button.getMessage().getString().startsWith("Seed Type")
+                ? "Seed Type: " + type.name() : button.getMessage().getString().startsWith("Profile")
+                ? "Profile: " + profile : "RNG Seed: " + (rngSeed == null ? "Overworld" : rngSeed)));
+    }
+
+    private void startSearch() {
+        if (parent instanceof CreateWorldScreen createWorld) {
+            status = "Searching";
+            CreateWorldIntegration.startSearch(createWorld, minecraft, new String[] {status});
+        } else {
+            status = "Open Create New World to bind the active 26.2 worldgen context";
         }
+    }
+
+    private SeedTypeChoice nextSeedType(SeedTypeChoice current) {
+        var values = new SeedTypeChoice[] {SeedTypeChoice.VILLAGE, SeedTypeChoice.SHIPWRECK,
+                SeedTypeChoice.DESERT_TEMPLE, SeedTypeChoice.RUINED_PORTAL,
+                SeedTypeChoice.BURIED_TREASURE};
+        for (int i = 0; i < values.length; i++) if (values[i] == current) return values[(i + 1) % values.length];
         return values[0];
     }
 
-    private Component label(String prefix, String value) {
-        return Component.literal(prefix + value);
+    private String nextProfile(String current) {
+        var values = new String[] {FilterProfile.strictRankedStyle().name(),
+                FilterProfile.balanced().name(), FilterProfile.completable().name()};
+        for (int i = 0; i < values.length; i++) if (values[i].equals(current)) return values[(i + 1) % values.length];
+        return values[0];
+    }
+
+    private String rngLabel() {
+        var seed = CONTROLLER.settings().customRngSeed();
+        return seed == null ? "Overworld" : Long.toString(seed);
     }
 
     @Override
@@ -97,7 +123,7 @@ public final class FsgScreen extends Screen {
         graphics.textRenderer().accept(net.minecraft.client.gui.TextAlignment.CENTER,
                 width / 2, 20, title);
         graphics.textRenderer().accept(net.minecraft.client.gui.TextAlignment.CENTER,
-                width / 2, height - 35, Component.literal(status));
+                width / 2, height - 55, Component.literal("Status: " + status));
         super.extractRenderState(graphics, mouseX, mouseY, delta);
     }
 

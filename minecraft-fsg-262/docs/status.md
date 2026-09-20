@@ -31,6 +31,10 @@
 - The 26.2 adapter now bounds placement searches by the selected profile,
   records the matching vanilla structure key, exposes placement evidence, and
   records placement/terrain/total analysis timings.
+- MCSR configuration now has a dedicated native-style screen reachable from
+  the title screen and as a compact indicator on Create New World. Settings
+  are shared through `WorldCreationController` and persisted to the client
+  config file; the vanilla Game/World/More flow remains intact.
 
 ## Verified boundary and remaining work
 
@@ -56,3 +60,8 @@ the current placeholder analyzer inspected Minecraft world generation. The
 fallback planner produces deterministic, validated placement plans from real
 adapter-supplied terrain candidates; it does not mutate playable chunks until a
 26.2 world-generation hook is implemented.
+
+The dedicated MCSR screen is a configuration/presentation layer only. Search
+still uses the existing asynchronous controller and requires a Create New
+World context for worldgen analysis. No candidate is accepted when the
+adapter reports `NOT_VERIFIED`.

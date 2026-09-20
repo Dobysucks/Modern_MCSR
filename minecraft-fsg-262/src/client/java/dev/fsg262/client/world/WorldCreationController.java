@@ -9,8 +9,15 @@ import dev.fsg262.search.SeedSearchHandle;
 import dev.fsg262.search.SeedSearchManager;
 import dev.fsg262.search.SeedSearchProgress;
 import dev.fsg262.search.SeedSearchRequest;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -23,7 +30,9 @@ public final class WorldCreationController implements AutoCloseable {
     private final SeedSearchManager searchManager = new SeedSearchManager();
     private final AtomicReference<SeedSearchHandle> activeSearch = new AtomicReference<>();
     private final AtomicReference<Long> acceptedSeed = new AtomicReference<>();
-    private volatile WorldCreationSettings settings = WorldCreationSettings.defaults();
+    private final AtomicReference<SeedSearchProgress> progress = new AtomicReference<>();
+    private volatile String status = "Idle";
+    private volatile WorldCreationSettings settings = loadSettings();
 
     public static WorldCreationController instance() {
         return INSTANCE;
@@ -35,6 +44,15 @@ public final class WorldCreationController implements AutoCloseable {
 
     public void updateSettings(WorldCreationSettings settings) {
         this.settings = settings;
+        saveSettings(settings);
+    }
+
+    public SeedSearchProgress progress() {
+        return progress.get();
+    }
+
+    public String status() {
+        return status;
     }
 
     public boolean hasAcceptedSeed() {
@@ -58,6 +76,7 @@ public final class WorldCreationController implements AutoCloseable {
         var current = activeSearch.getAndSet(null);
         if (current != null) current.cancel();
         acceptedSeed.set(null);
+        status = "Stopped";
     }
 
     public void startSearch(
@@ -67,7 +86,7 @@ public final class WorldCreationController implements AutoCloseable {
     ) {
         cancel();
         var currentSettings = settings;
-        var profile = FilterProfile.strictRankedStyle();
+        var profile = profile(currentSettings.profileName());
         var localFilter = new LocalSeedFilter(
                 new Minecraft26WorldgenAnalyzer(screen.getUiState().getSettings()));
         var request = new SeedSearchRequest(
@@ -87,8 +106,10 @@ public final class WorldCreationController implements AutoCloseable {
             acceptedSeed.set(seed);
             screen.getUiState().setSeed(Long.toString(seed));
             statusReporter.accept("ACCEPTED SEED FOUND: " + seed);
+            status = "Seed Found";
         });
         activeSearch.set(handle);
+        status = "Searching";
         statusReporter.accept("Searching for " + currentSettings.seedType().name() + "...");
     }
 
@@ -99,6 +120,60 @@ public final class WorldCreationController implements AutoCloseable {
             throw new IllegalStateException("FSG search has not produced an accepted seed");
         }
         screen.getUiState().setSeed(Long.toString(accepted));
+    }
+
+    private FilterProfile profile(String name) {
+        return switch (name.toUpperCase(java.util.Locale.ROOT)) {
+            case "BALANCED" -> FilterProfile.balanced();
+            case "COMPLETABLE" -> FilterProfile.completable();
+            default -> FilterProfile.strictRankedStyle();
+        };
+    }
+
+    private static Path settingsPath() {
+        return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("fsg262.properties");
+    }
+
+    private static WorldCreationSettings loadSettings() {
+        var defaults = WorldCreationSettings.defaults();
+        var properties = new Properties();
+        try (Reader reader = Files.newBufferedReader(settingsPath())) {
+            properties.load(reader);
+            var type = dev.fsg262.filter.SeedTypeChoice.valueOf(
+                    properties.getProperty("seedType", defaults.seedType().name()));
+            var custom = properties.getProperty("rngSeed", "");
+            return new WorldCreationSettings(
+                    Boolean.parseBoolean(properties.getProperty("enabled", Boolean.toString(defaults.enabled()))),
+                    type, properties.getProperty("profile", defaults.profileName()),
+                    Boolean.parseBoolean(properties.getProperty("completable",
+                            Boolean.toString(defaults.completable()))),
+                    Boolean.parseBoolean(properties.getProperty("standardizedRng",
+                            Boolean.toString(defaults.standardizedRng()))),
+                    custom.isBlank() ? null : Long.valueOf(custom),
+                    Boolean.parseBoolean(properties.getProperty("backgroundFiltering",
+                            Boolean.toString(defaults.backgroundFiltering()))));
+        } catch (IOException | IllegalArgumentException ignored) {
+            return defaults;
+        }
+    }
+
+    private static void saveSettings(WorldCreationSettings settings) {
+        try {
+            Files.createDirectories(settingsPath().getParent());
+            var properties = new Properties();
+            properties.setProperty("enabled", Boolean.toString(settings.enabled()));
+            properties.setProperty("seedType", settings.seedType().name());
+            properties.setProperty("profile", settings.profileName());
+            properties.setProperty("completable", Boolean.toString(settings.completable()));
+            properties.setProperty("standardizedRng", Boolean.toString(settings.standardizedRng()));
+            properties.setProperty("rngSeed", settings.customRngSeedText());
+            properties.setProperty("backgroundFiltering", Boolean.toString(settings.backgroundFiltering()));
+            try (Writer writer = Files.newBufferedWriter(settingsPath())) {
+                properties.store(writer, "FSG 26.2 MCSR settings");
+            }
+        } catch (IOException ignored) {
+            // Runtime settings remain available for this session.
+        }
     }
 
     @Override

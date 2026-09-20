@@ -30,4 +30,8 @@ public record WorldCreationSettings(
     public long rngSeed(long worldSeed) {
         return customRngSeed == null ? worldSeed : customRngSeed;
     }
+
+    public String customRngSeedText() {
+        return customRngSeed == null ? "" : Long.toString(customRngSeed);
+    }
 }
