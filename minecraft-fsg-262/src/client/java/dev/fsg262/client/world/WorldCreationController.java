@@ -1,18 +1,11 @@
 package dev.fsg262.client.world;
 
-import dev.fsg262.filter.FilterProfile;
-import dev.fsg262.evaluation.EvaluationResult;
-import dev.fsg262.evaluation.EvaluatorOrchestrator;
-import dev.fsg262.evaluation.EvaluatorRuntime;
-import dev.fsg262.search.CandidateEvaluation;
-import dev.fsg262.search.LocalFilterResult;
-import dev.fsg262.search.LocalSeedFilter;
-import dev.fsg262.search.SeedCandidateEvaluator;
-import dev.fsg262.search.SeedSearchHandle;
-import dev.fsg262.search.SeedSearchManager;
-import dev.fsg262.search.SeedSearchProgress;
-import dev.fsg262.search.SeedSearchRequest;
-import dev.fsg262.loot.ChestLootInjectionState;
+import dev.fsg262.search.AcceptedSeedPair;
+import dev.fsg262.seeddb.PersistentSeedSelector;
+import dev.fsg262.seeddb.SeedDatabase;
+import dev.fsg262.seeddb.SeedDatabaseResources;
+import dev.fsg262.seeddb.SeedCreationLifecycle;
+import dev.fsg262.world.McsrWorldSeedState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
@@ -21,196 +14,304 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-/**
- * Native world-creation handoff. The accepted seed is written into the
- * vanilla UI state, which is the source Minecraft uses when creating a world.
- */
-public final class WorldCreationController implements AutoCloseable {
+public final class WorldCreationController {
     private static final WorldCreationController INSTANCE = new WorldCreationController();
-    private final SeedSearchManager searchManager = new SeedSearchManager();
-    private final AtomicReference<SeedSearchHandle> activeSearch = new AtomicReference<>();
-    private final AtomicReference<Long> acceptedSeed = new AtomicReference<>();
-    private final AtomicReference<SeedSearchProgress> progress = new AtomicReference<>();
-    private volatile String status = "Idle";
-    private volatile EvaluationResult lastEvaluation;
+    private static final Logger LOGGER = Logger.getLogger("fsg262");
+
+    private final Map<String, PersistentSeedSelector> selectors = new HashMap<>();
+    private final SeedCreationLifecycle creationLifecycle = new SeedCreationLifecycle();
     private volatile WorldCreationSettings settings = loadSettings();
+    private volatile AcceptedSeedPair acceptedSeeds;
+    private volatile String status = "Ready";
+    private WorldCreationController() {}
 
     public static WorldCreationController instance() {
         return INSTANCE;
     }
 
-    public WorldCreationSettings settings() {
+    public synchronized WorldCreationSettings settings() {
         return settings;
     }
 
-    public void updateSettings(WorldCreationSettings settings) {
-        this.settings = settings;
-        ChestLootInjectionState.disable();
-        saveSettings(settings);
+    public synchronized void updateSettings(WorldCreationSettings updated) {
+        var next = updated;
+        if (!next.enabled()) {
+            creationLifecycle.creationFailed();
+            next = next.withOverworldSeed(null).withNetherSeed(null);
+        }
+        if (!java.util.Objects.equals(settings.overworldCategory(), next.overworldCategory())
+                || !java.util.Objects.equals(creationLifecycle.overworldSeed(), next.overworldSeed())) {
+            creationLifecycle.selectOverworld(null);
+        }
+        if (!java.util.Objects.equals(settings.netherCategory(), next.netherCategory())
+                || !java.util.Objects.equals(creationLifecycle.netherSeed(), next.netherSeed())) {
+            creationLifecycle.selectNether(null);
+        }
+        settings = next;
+        acceptedSeeds = next.overworldSeed() == null || next.netherSeed() == null
+                ? null : new AcceptedSeedPair(next.overworldSeed(), next.netherSeed());
+        try {
+            saveSettings(next);
+        } catch (IOException exception) {
+            status = "Could not save MCSR settings: " + exception.getMessage();
+            LOGGER.log(Level.WARNING, "Could not save MCSR settings", exception);
+        }
     }
 
-    public SeedSearchProgress progress() {
-        return progress.get();
+    public AcceptedSeedPair acceptedSeeds() {
+        return acceptedSeeds;
     }
 
     public String status() {
         return status;
     }
 
-    public EvaluationResult lastEvaluation() {
-        return lastEvaluation;
+    public void setStatus(String value) {
+        status = value;
     }
 
-    public boolean hasAcceptedSeed() {
-        return acceptedSeed.get() != null;
+    public String countsText() {
+        return "Seeds: Overworld " + SeedDatabaseResources.overworld().size()
+                + " | Nether " + SeedDatabaseResources.nether().size();
     }
 
-    public boolean acceptedSeedMatches(String seed) {
+    public synchronized OptionalLong selectOverworldCategory(String category) throws IOException {
+        if (!WorldCreationSettings.OVERWORLD_CATEGORIES.contains(category)) {
+            throw new IllegalArgumentException("Unsupported Overworld category: " + category);
+        }
+        creationLifecycle.selectOverworld(null);
+        settings = settings.withOverworldCategory(category);
+        acceptedSeeds = null;
+        saveSettings(settings);
+        if (!settings.enabled()) return OptionalLong.empty();
+        return reserveOverworldCategory();
+    }
+
+    public synchronized OptionalLong selectNetherCategory(String category) throws IOException {
+        if (!WorldCreationSettings.NETHER_CATEGORIES.contains(category)) {
+            throw new IllegalArgumentException("Unsupported Nether category: " + category);
+        }
+        creationLifecycle.selectNether(null);
+        settings = settings.withNetherCategory(category);
+        acceptedSeeds = null;
+        saveSettings(settings);
+        if (!settings.enabled()) return OptionalLong.empty();
+        return reserveNetherCategory();
+    }
+
+    public synchronized void ensureCategorySelections() throws IOException {
+        if (!settings.enabled()) return;
         try {
-            return hasAcceptedSeed() && acceptedSeed() == Long.parseLong(seed.trim());
-        } catch (NumberFormatException ignored) {
+            if (settings.overworldSeed() == null) reserveOverworldCategory();
+            if (settings.netherSeed() == null) reserveNetherCategory();
+        } catch (IOException | RuntimeException exception) {
+            creationLifecycle.creationFailed();
+            settings = settings.withOverworldSeed(null).withNetherSeed(null);
+            acceptedSeeds = null;
+            persistSettings();
+            throw exception;
+        }
+    }
+
+    private OptionalLong reserveOverworldCategory() throws IOException {
+        var current = settings;
+        var selected = selector("overworld", current.profileName(),
+                SeedDatabaseResources.overworld())
+                .reserveNextMatching(current.overworldCategory());
+        if (selected.isEmpty()) {
+            status = "No available Overworld seeds tagged " + current.overworldCategory()
+                    + " for profile " + current.profileName();
+            return OptionalLong.empty();
+        }
+        var reservation = selected.get();
+        creationLifecycle.selectOverworld(reservation);
+        settings = settings.withOverworldSeed(reservation.seed());
+        status = "Selected " + current.overworldCategory() + " Overworld candidate";
+        refreshAcceptedSeeds();
+        return OptionalLong.of(reservation.seed());
+    }
+
+    private OptionalLong reserveNetherCategory() throws IOException {
+        var current = settings;
+        var selected = selector("nether", current.profileName(),
+                SeedDatabaseResources.nether())
+                .reserveNextMatching(current.netherCategory());
+        if (selected.isEmpty()) {
+            status = "No available Nether seeds tagged " + current.netherCategory()
+                    + " for profile " + current.profileName();
+            return OptionalLong.empty();
+        }
+        var reservation = selected.get();
+        creationLifecycle.selectNether(reservation);
+        settings = settings.withNetherSeed(reservation.seed());
+        status = "Selected " + current.netherCategory() + " Nether candidate";
+        refreshAcceptedSeeds();
+        return OptionalLong.of(reservation.seed());
+    }
+
+    private void refreshAcceptedSeeds() {
+        acceptedSeeds = settings.overworldSeed() == null || settings.netherSeed() == null
+                ? null : new AcceptedSeedPair(settings.overworldSeed(), settings.netherSeed());
+    }
+
+    public synchronized boolean prepareWorldCreation(CreateWorldScreen screen) {
+        if (!settings.enabled()) {
+            McsrWorldSeedState.clearPending();
+            return true;
+        }
+        try {
+            ensureCategorySelections();
+            if (settings.overworldSeed() == null || settings.netherSeed() == null) {
+                creationLifecycle.creationFailed();
+                settings = settings.withOverworldSeed(null).withNetherSeed(null);
+                acceptedSeeds = null;
+                return false;
+            }
+            var current = settings;
+            if (creationLifecycle.overworldSeed() == null) {
+                var reservation = selector("overworld", current.profileName(),
+                        SeedDatabaseResources.overworld()).reserve(current.overworldSeed())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Selected Overworld seed was already consumed or is not in the database"));
+                creationLifecycle.selectOverworld(reservation);
+            }
+            if (creationLifecycle.netherSeed() == null) {
+                var reservation = selector("nether", current.profileName(),
+                        SeedDatabaseResources.nether()).reserve(current.netherSeed())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Selected Nether seed was already consumed or is not in the database"));
+                creationLifecycle.selectNether(reservation);
+            }
+            var accepted = new AcceptedSeedPair(current.overworldSeed(), current.netherSeed());
+            acceptedSeeds = accepted;
+            McsrWorldSeedState.prepareWorldCreation(accepted.mcsr_overworld_seed(),
+                    accepted.mcsr_nether_seed(), current.disablePiglinBrutes(),
+                    current.standardizedRng());
+            creationLifecycle.beginCreation();
+            screen.getUiState().setSeed(Long.toString(accepted.mcsr_overworld_seed()));
+            status = "Creating world with separate MCSR Overworld and Nether seeds";
+            return true;
+        } catch (IOException | IllegalStateException exception) {
+            creationLifecycle.creationFailed();
+            settings = settings.withOverworldSeed(null).withNetherSeed(null);
+            acceptedSeeds = null;
+            persistSettings();
+            status = "Could not select MCSR seeds: " + exception.getMessage();
             return false;
         }
     }
-    public long acceptedSeed() {
-        var seed = acceptedSeed.get();
-        if (seed == null) throw new IllegalStateException("No accepted seed is available");
-        return seed;
+
+    public synchronized void worldCreationFailed() {
+        if (!creationLifecycle.isCreating()) return;
+        McsrWorldSeedState.clearPending();
+        creationLifecycle.creationFailed();
+        settings = settings.withOverworldSeed(null).withNetherSeed(null);
+        acceptedSeeds = null;
+        persistSettings();
+        status = "World creation failed; selected seeds remain unconsumed";
     }
 
-    public void cancel() {
-        var current = activeSearch.getAndSet(null);
-        if (current != null) current.cancel();
-        acceptedSeed.set(null);
-        ChestLootInjectionState.disable();
-        status = "Stopped";
-    }
-
-    public void startSearch(
-            CreateWorldScreen screen,
-            Consumer<SeedSearchProgress> progressReporter,
-            Consumer<String> statusReporter
-    ) {
-        cancel();
-        var currentSettings = settings;
-        var profile = profile(currentSettings.profileName());
-        var worldgenContext = screen.getUiState().getSettings();
-        // Structure template loading requires a LevelStorageAccess.  The
-        // temporary server owns that lifecycle; do not pass a null storage
-        // access to StructureTemplateManager from the client screen.
-        var analyzer = new Minecraft26WorldgenAnalyzer(worldgenContext, null);
-        EvaluatorRuntime.install(analyzer, analyzer);
-        var localFilter = new LocalSeedFilter(analyzer);
-        var request = new SeedSearchRequest(
-                screen.getUiState().getSeed().hashCode(),
-                currentSettings.seedType(), profile, 100_000);
-        SeedCandidateEvaluator evaluator = (candidate, ignored) -> {
-            LocalFilterResult result = localFilter.evaluate(candidate,
-                    currentSettings.rngSeed(candidate), currentSettings.seedType(),
-                    profile, currentSettings.completable());
-            return switch (result.status()) {
-                case PASS -> CandidateEvaluation.accepted(result.reason());
-                case FAIL -> CandidateEvaluation.rejected(result.reason());
-                case NOT_VERIFIED -> CandidateEvaluation.notVerified(result.reason());
-            };
-        };
-        var handle = searchManager.search(request, evaluator, progressReporter, seed -> {
-            acceptedSeed.set(seed);
-            if (currentSettings.enabled()) {
-                ChestLootInjectionState.enable(seed, configurationKey(currentSettings));
-            }
-            screen.getUiState().setSeed(Long.toString(seed));
-            lastEvaluation = new EvaluatorOrchestrator(analyzer, analyzer)
-                    .evaluate(seed, profile);
-            String evidence = lastEvaluation.stages().stream()
-                    .filter(stage -> stage.status() != dev.fsg262.completion.VerificationStatus.PASS)
-                    .map(stage -> stage.name() + "=" + stage.status())
-                    .findFirst().orElse("all stages passed");
-            statusReporter.accept("ACCEPTED SEED FOUND: " + seed
-                    + " · FINAL " + lastEvaluation.status() + " · " + evidence);
-            status = "Seed Found · " + lastEvaluation.status() + " · " + evidence;
-        });
-        activeSearch.set(handle);
-        status = "Searching";
-        statusReporter.accept("Searching for " + currentSettings.seedType().name() + "...");
-    }
-
-    private String configurationKey(WorldCreationSettings value) {
-        return value.seedType().name() + "|" + value.profileName() + "|"
-                + value.completable() + "|" + value.standardizedRng() + "|"
-                + value.rngSeed(0L);
-    }
-
-    public void requireAcceptedSeed(CreateWorldScreen screen) {
-        if (!settings.enabled()) return;
-        var accepted = acceptedSeed.get();
-        if (accepted == null) {
-            throw new IllegalStateException("FSG search has not produced an accepted seed");
+    public synchronized void creationScreenRemoved() {
+        creationLifecycle.screenRemoved();
+        if (!creationLifecycle.isCreating()) {
+            McsrWorldSeedState.clearPending();
+            settings = settings.withOverworldSeed(null).withNetherSeed(null);
+            acceptedSeeds = null;
+            persistSettings();
+            status = "Create World closed; selected seeds remain unconsumed";
         }
-        screen.getUiState().setSeed(Long.toString(accepted));
     }
 
-    private FilterProfile profile(String name) {
-        return switch (name.toUpperCase(java.util.Locale.ROOT)) {
-            case "BALANCED" -> FilterProfile.balanced();
-            case "COMPLETABLE" -> FilterProfile.completable();
-            default -> FilterProfile.strictRankedStyle();
-        };
+    public synchronized void worldCreationFinished() {
+        if (!creationLifecycle.isCreating()) return;
+        try {
+            creationLifecycle.creationSucceeded();
+            settings = settings.withOverworldSeed(null).withNetherSeed(null);
+            acceptedSeeds = null;
+            persistSettings();
+            status = "MCSR seeds consumed for created world";
+        } catch (IOException | IllegalStateException exception) {
+            status = "World created, but seed consumption could not be persisted: "
+                    + exception.getMessage();
+            LOGGER.log(Level.SEVERE, status, exception);
+        }
+    }
+
+    public String seedLabel(Long seed) {
+        return seed == null ? "Not selected" : Long.toString(seed);
+    }
+
+    private void persistSettings() {
+        try {
+            saveSettings(settings);
+        } catch (IOException exception) {
+            status = "Could not save MCSR settings: " + exception.getMessage();
+            LOGGER.log(Level.WARNING, "Could not save MCSR settings", exception);
+        }
+    }
+
+    private PersistentSeedSelector selector(String dimension, String profile,
+                                            SeedDatabase database) throws IOException {
+        var key = dimension + "|" + profile;
+        var existing = selectors.get(key);
+        if (existing != null) return existing;
+        var file = settingsPath().getParent().resolve("consumed-seeds")
+                .resolve(dimension).resolve(profile + ".bitmap");
+        var created = new PersistentSeedSelector(database, file);
+        selectors.put(key, created);
+        return created;
     }
 
     private static Path settingsPath() {
-        return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("fsg262.properties");
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("config").resolve("fsg262.properties");
     }
 
     private static WorldCreationSettings loadSettings() {
         var defaults = WorldCreationSettings.defaults();
+        if (!Files.exists(settingsPath())) return defaults;
         var properties = new Properties();
         try (Reader reader = Files.newBufferedReader(settingsPath())) {
             properties.load(reader);
-            var type = dev.fsg262.filter.SeedTypeChoice.valueOf(
-                    properties.getProperty("seedType", defaults.seedType().name()));
-            var custom = properties.getProperty("rngSeed", "");
             return new WorldCreationSettings(
-                    Boolean.parseBoolean(properties.getProperty("enabled", Boolean.toString(defaults.enabled()))),
-                    type, properties.getProperty("profile", defaults.profileName()),
+                    Boolean.parseBoolean(properties.getProperty("enabled",
+                            Boolean.toString(defaults.enabled()))),
+                    properties.getProperty("profile", defaults.profileName()),
                     Boolean.parseBoolean(properties.getProperty("completable",
                             Boolean.toString(defaults.completable()))),
                     Boolean.parseBoolean(properties.getProperty("standardizedRng",
                             Boolean.toString(defaults.standardizedRng()))),
-                    custom.isBlank() ? null : Long.valueOf(custom),
-                    Boolean.parseBoolean(properties.getProperty("backgroundFiltering",
-                            Boolean.toString(defaults.backgroundFiltering()))));
-        } catch (IOException | IllegalArgumentException ignored) {
+                    Boolean.parseBoolean(properties.getProperty("disablePiglinBrutes",
+                            Boolean.toString(defaults.disablePiglinBrutes()))),
+                    properties.getProperty("overworldCategory", defaults.overworldCategory()),
+                    properties.getProperty("netherCategory", defaults.netherCategory()),
+                    null, null);
+        } catch (IOException | IllegalArgumentException exception) {
+            LOGGER.log(Level.WARNING, "Could not load MCSR settings; using defaults", exception);
             return defaults;
         }
     }
 
-    private static void saveSettings(WorldCreationSettings settings) {
-        try {
-            Files.createDirectories(settingsPath().getParent());
-            var properties = new Properties();
-            properties.setProperty("enabled", Boolean.toString(settings.enabled()));
-            properties.setProperty("seedType", settings.seedType().name());
-            properties.setProperty("profile", settings.profileName());
-            properties.setProperty("completable", Boolean.toString(settings.completable()));
-            properties.setProperty("standardizedRng", Boolean.toString(settings.standardizedRng()));
-            properties.setProperty("rngSeed", settings.customRngSeedText());
-            properties.setProperty("backgroundFiltering", Boolean.toString(settings.backgroundFiltering()));
-            try (Writer writer = Files.newBufferedWriter(settingsPath())) {
-                properties.store(writer, "FSG 26.2 MCSR settings");
-            }
-        } catch (IOException ignored) {
-            // Runtime settings remain available for this session.
+    private static void saveSettings(WorldCreationSettings settings) throws IOException {
+        Files.createDirectories(settingsPath().getParent());
+        var properties = new Properties();
+        properties.setProperty("enabled", Boolean.toString(settings.enabled()));
+        properties.setProperty("profile", settings.profileName());
+        properties.setProperty("completable", Boolean.toString(settings.completable()));
+        properties.setProperty("standardizedRng", Boolean.toString(settings.standardizedRng()));
+        properties.setProperty("disablePiglinBrutes",
+                Boolean.toString(settings.disablePiglinBrutes()));
+        properties.setProperty("overworldCategory", settings.overworldCategory());
+        properties.setProperty("netherCategory", settings.netherCategory());
+        try (Writer writer = Files.newBufferedWriter(settingsPath())) {
+            properties.store(writer, "MCSR seed database settings");
         }
-    }
-
-    @Override
-    public void close() {
-        cancel();
-        searchManager.close();
     }
 }

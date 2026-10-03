@@ -2,19 +2,19 @@ package dev.fsg262.client;
 
 import dev.fsg262.client.world.WorldCreationController;
 import dev.fsg262.client.world.WorldCreationSettings;
-import dev.fsg262.filter.FilterProfile;
-import dev.fsg262.filter.SeedTypeChoice;
 import dev.fsg262.mixin.CreateWorldScreenAccess;
 import dev.fsg262.mixin.FsgScreenAccess;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.tabs.GridLayoutTab;
 import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.Tab;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 public final class CreateWorldIntegration {
@@ -34,7 +34,7 @@ public final class CreateWorldIntegration {
         if (oldBar == null || oldBar.getTabs().stream()
                 .anyMatch(tab -> tab.getTabTitle().getString().equals("MCSR"))) return;
         var tabs = new ArrayList<>(oldBar.getTabs());
-        tabs.add(new McsrTab(screen));
+        tabs.add(new McsrTab());
         var newBar = MenuTabBar.builder(access.fsg262$getTabManager(), screen.width)
                 .addTabs(tabs.toArray(Tab[]::new)).build();
         var screenAccess = (FsgScreenAccess) screen;
@@ -45,150 +45,168 @@ public final class CreateWorldIntegration {
     }
 
     private static final class McsrTab extends GridLayoutTab {
-        private final CreateWorldScreen screen;
-        private final Button statusLabel;
-        private final Button progressLabel;
-        private final Button acceptedLabel;
+        private final Button enabledButton;
+        private final Button profileButton;
+        private final Button completableButton;
+        private final Button rngButton;
+        private final Button brutesButton;
+        private final Button overworldCategoryButton;
+        private final Button netherCategoryButton;
+        private final StringWidget overworldValueLabel;
+        private final StringWidget netherValueLabel;
+        private final StringWidget countLabel;
+        private final StringWidget statusLabel;
 
-        private McsrTab(CreateWorldScreen screen) {
+        private McsrTab() {
             super(Component.literal("MCSR"));
-            this.screen = screen;
-            this.statusLabel = text("Status: " + CONTROLLER.status());
-            this.progressLabel = text(progressText());
-            this.acceptedLabel = text(acceptedText());
             layout.columnSpacing(8).rowSpacing(4);
-            addToggle("Enabled", CONTROLLER.settings().enabled(), current ->
-                    update(current, !current.enabled(), current.seedType(), current.profileName(),
-                            current.completable(), current.standardizedRng(), current.customRngSeed()),
-                    settings -> settings.enabled(), 0, 0);
-            addCycle("Seed Type", CONTROLLER.settings().seedType().name(), button -> {
-                var current = CONTROLLER.settings();
-                update(button, current, nextSeedType(current.seedType()), current.profileName(),
-                        current.completable(), current.standardizedRng(), current.customRngSeed());
-            }, 0, 1);
-            addCycle("Profile", CONTROLLER.settings().profileName(), button -> {
-                var current = CONTROLLER.settings();
-                update(button, current, current.seedType(), nextProfile(current.profileName()),
-                        current.completable(), current.standardizedRng(), current.customRngSeed());
-            }, 1, 0);
-            addToggle("Completable", CONTROLLER.settings().completable(), current ->
-                    update(current, current.enabled(), current.seedType(), current.profileName(),
-                            !current.completable(), current.standardizedRng(), current.customRngSeed()),
-                    settings -> settings.completable(), 1, 1);
-            addToggle("Standardized RNG", CONTROLLER.settings().standardizedRng(), current ->
-                    update(current, current.enabled(), current.seedType(), current.profileName(),
-                            current.completable(), !current.standardizedRng(), current.customRngSeed()),
-                    settings -> settings.standardizedRng(), 2, 0);
-            addToggle("Background Filtering", CONTROLLER.settings().backgroundFiltering(), current ->
-                    update(current, current.enabled(), current.seedType(), current.profileName(),
-                            current.completable(), current.standardizedRng(), current.customRngSeed(),
-                            !current.backgroundFiltering()),
-                    settings -> settings.backgroundFiltering(), 2, 1);
-            addCycle("RNG Seed", rngLabel(), button -> {
-                var current = CONTROLLER.settings();
-                update(button, current, current.seedType(), current.profileName(),
-                        current.completable(), current.standardizedRng(),
-                        current.customRngSeed() == null ? 0L : null);
-            }, 3, 0);
-            layout.addChild(Button.builder(Component.literal("START FILTERING"),
-                    button -> CONTROLLER.startSearch(screen,
-                            ignored -> Minecraft.getInstance().execute(this::refresh),
-                            status -> Minecraft.getInstance().execute(() -> {
-                                statusLabel.setMessage(Component.literal("Status: " + status));
-                                refresh();
-                            })))
-                    .bounds(0, 0, 140, 20).build(), 4, 0, 1, 2);
-            layout.addChild(Button.builder(Component.literal("STOP FILTERING"),
-                    button -> CONTROLLER.cancel()).bounds(0, 0, 140, 20).build(), 5, 0, 1, 2);
-            layout.addChild(statusLabel, 6, 0, 1, 2);
-            layout.addChild(progressLabel, 7, 0, 1, 2);
-            layout.addChild(acceptedLabel, 8, 0, 1, 2);
+            try {
+                CONTROLLER.ensureCategorySelections();
+            } catch (IOException | IllegalStateException exception) {
+                CONTROLLER.setStatus("Seed selection failed: " + exception.getMessage());
+            }
+            var settings = CONTROLLER.settings();
+            enabledButton = toggle("MCSR", settings.enabled(), value ->
+                    CONTROLLER.updateSettings(CONTROLLER.settings().withEnabled(value)),
+                    WorldCreationSettings::enabled);
+            profileButton = cycle("Profile", settings.profileName(),
+                    this::cycleProfile);
+            completableButton = toggle("Completable", settings.completable(), value ->
+                    CONTROLLER.updateSettings(CONTROLLER.settings().withCompletable(value)),
+                    WorldCreationSettings::completable);
+            rngButton = toggle("Standardized RNG", settings.standardizedRng(), value ->
+                    CONTROLLER.updateSettings(CONTROLLER.settings().withStandardizedRng(value)),
+                    WorldCreationSettings::standardizedRng);
+            brutesButton = toggle("Disable Piglin Brutes", settings.disablePiglinBrutes(), value ->
+                    CONTROLLER.updateSettings(CONTROLLER.settings().withDisablePiglinBrutes(value)),
+                    WorldCreationSettings::disablePiglinBrutes);
+            countLabel = wideText(CONTROLLER.countsText());
+            overworldCategoryButton = categoryButton(true);
+            netherCategoryButton = categoryButton(false);
+            overworldValueLabel = wideText(seedText("Overworld", settings.overworldSeed()));
+            netherValueLabel = wideText(seedText("Nether", settings.netherSeed()));
+            statusLabel = wideText(displayText("Status: " + CONTROLLER.status(), 500));
+
+            layout.addChild(enabledButton, 0, 0);
+            layout.addChild(profileButton, 0, 1);
+            layout.addChild(completableButton, 1, 0);
+            layout.addChild(rngButton, 1, 1);
+            layout.addChild(brutesButton, 2, 0, 1, 2);
+            layout.addChild(overworldCategoryButton, 3, 0);
+            layout.addChild(netherCategoryButton, 3, 1);
+            layout.addChild(overworldValueLabel, 4, 0, 1, 2);
+            layout.addChild(netherValueLabel, 5, 0, 1, 2);
+            layout.addChild(countLabel, 6, 0, 1, 2);
+            layout.addChild(statusLabel, 7, 0, 1, 2);
         }
 
-        private Button text(String value) {
-            return Button.builder(Component.literal(value), button -> {})
-                    .bounds(0, 0, 140, 20).build();
+        private StringWidget wideText(String value) {
+            return new StringWidget(0, 0, 500, 20, Component.literal(value),
+                    Minecraft.getInstance().font);
+        }
+
+        private String displayText(String value, int maxWidth) {
+            var font = Minecraft.getInstance().font;
+            if (font.width(value) <= maxWidth) return value;
+            var shortened = value;
+            while (!shortened.isEmpty()
+                    && font.width(shortened + "...") > maxWidth) {
+                shortened = shortened.substring(0, shortened.length() - 1);
+            }
+            return shortened + "...";
+        }
+
+        private Button cycle(String label, String value,
+                             java.util.function.Consumer<Button> action) {
+            return Button.builder(Component.literal(label + ": " + value),
+                            button -> action.accept(button))
+                    .bounds(0, 0, 150, 20).build();
+        }
+
+        private Button categoryButton(boolean overworld) {
+            var category = overworld ? CONTROLLER.settings().overworldCategory()
+                    : CONTROLLER.settings().netherCategory();
+            var dimension = overworld ? "Overworld" : "Nether";
+            return Button.builder(Component.literal(dimension + ": " + category),
+                            button -> cycleCategory(overworld))
+                    .bounds(0, 0, 260, 20).build();
+        }
+
+        private Button toggle(String label, boolean value,
+                              java.util.function.Consumer<Boolean> setter,
+                              java.util.function.Function<WorldCreationSettings, Boolean> getter) {
+            return Button.builder(Component.literal(toggleText(label, value)), button -> {
+                setter.accept(!getter.apply(CONTROLLER.settings()));
+                button.setMessage(Component.literal(toggleText(label, getter.apply(CONTROLLER.settings()))));
+                refresh();
+            }).bounds(0, 0, 170, 20).build();
+        }
+
+        private String toggleText(String label, boolean value) {
+            return label + ": " + (value ? "ON" : "OFF");
+        }
+
+        private void cycleProfile(Button button) {
+            var profiles = WorldCreationSettings.PROFILES;
+            var current = CONTROLLER.settings();
+            var index = profiles.indexOf(current.profileName());
+            var next = profiles.get((index + 1) % profiles.size());
+            CONTROLLER.updateSettings(current.withProfile(next));
+            button.setMessage(Component.literal("Profile: " + next));
+            try {
+                CONTROLLER.ensureCategorySelections();
+            } catch (IOException | IllegalStateException exception) {
+                CONTROLLER.setStatus("Seed selection failed: " + exception.getMessage());
+            }
+            refresh();
+        }
+
+        private void cycleCategory(boolean overworld) {
+            var settings = CONTROLLER.settings();
+            var categories = overworld ? WorldCreationSettings.OVERWORLD_CATEGORIES
+                    : WorldCreationSettings.NETHER_CATEGORIES;
+            var current = overworld ? settings.overworldCategory() : settings.netherCategory();
+            var next = categories.get((categories.indexOf(current) + 1) % categories.size());
+            try {
+                if (overworld) CONTROLLER.selectOverworldCategory(next);
+                else CONTROLLER.selectNetherCategory(next);
+            } catch (IOException | IllegalStateException exception) {
+                CONTROLLER.setStatus("Seed selection failed: " + exception.getMessage());
+            }
+            refresh();
+        }
+
+        private String seedText(String dimension, Long seed) {
+            return dimension + " seed (informational): " + CONTROLLER.seedLabel(seed);
         }
 
         private void refresh() {
-            statusLabel.setMessage(Component.literal("Status: " + CONTROLLER.status()));
-            progressLabel.setMessage(Component.literal(progressText()));
-            acceptedLabel.setMessage(Component.literal(acceptedText()));
-        }
-
-        private String progressText() {
-            var progress = CONTROLLER.progress();
-            if (progress == null) return "Candidates: 0 | Candidates/sec: 0.0 | Current: -";
-            return String.format(java.util.Locale.ROOT,
-                    "Candidates: %d | Candidates/sec: %.1f | Current: %d | Stage: %s",
-                    progress.tested(), progress.candidatesPerSecond(),
-                    progress.currentSeed(), progress.currentStage());
-        }
-
-        private String acceptedText() {
-            return "Accepted Seed: " + (CONTROLLER.hasAcceptedSeed()
-                    ? CONTROLLER.acceptedSeed() : "None");
-        }
-
-        private void addToggle(String label, boolean value,
-                               java.util.function.Consumer<WorldCreationSettings> action,
-                               java.util.function.Function<WorldCreationSettings, Boolean> selected,
-                               int row, int column) {
-            layout.addChild(Button.builder(Component.literal(label + ": " + (value ? "ON" : "OFF")), button -> {
-                var current = CONTROLLER.settings();
-                action.accept(current);
-                button.setMessage(Component.literal(label + ": "
-                        + (selected.apply(CONTROLLER.settings()) ? "ON" : "OFF")));
-            }).bounds(0, 0, 150, 20).build(), row, column);
-        }
-
-        private void addCycle(String label, String value,
-                              java.util.function.Consumer<Button> action, int row, int column) {
-            layout.addChild(Button.builder(Component.literal(label + ": " + value),
-                    button -> action.accept(button)).bounds(0, 0, 150, 20).build(), row, column);
-        }
-
-        private void update(WorldCreationSettings current, boolean enabled, SeedTypeChoice type,
-                            String profile, boolean completable, boolean rng, Long rngSeed) {
-            CONTROLLER.updateSettings(new WorldCreationSettings(enabled, type, profile,
-                    completable, rng, rngSeed, current.backgroundFiltering()));
-        }
-
-        private void update(WorldCreationSettings current, boolean enabled, SeedTypeChoice type,
-                            String profile, boolean completable, boolean rng, Long rngSeed,
-                            boolean backgroundFiltering) {
-            CONTROLLER.updateSettings(new WorldCreationSettings(enabled, type, profile,
-                    completable, rng, rngSeed, backgroundFiltering));
-        }
-
-        private void update(Button button, WorldCreationSettings current, SeedTypeChoice type,
-                            String profile, boolean completable, boolean rng, Long rngSeed) {
-            update(current, current.enabled(), type, profile, completable, rng, rngSeed);
-            String prefix = button.getMessage().getString().split(":")[0];
-            button.setMessage(Component.literal(prefix + ": "
-                    + (prefix.equals("Seed Type") ? type.name()
-                    : prefix.equals("Profile") ? profile
-                    : rngSeed == null ? "Overworld" : rngSeed)));
-        }
-
-        private SeedTypeChoice nextSeedType(SeedTypeChoice current) {
-            var values = new SeedTypeChoice[] {SeedTypeChoice.VILLAGE, SeedTypeChoice.SHIPWRECK,
-                    SeedTypeChoice.DESERT_TEMPLE, SeedTypeChoice.RUINED_PORTAL,
-                    SeedTypeChoice.BURIED_TREASURE};
-            for (int i = 0; i < values.length; i++) if (values[i] == current) return values[(i + 1) % values.length];
-            return values[0];
-        }
-
-        private String nextProfile(String current) {
-            var values = new String[] {FilterProfile.strictRankedStyle().name(),
-                    FilterProfile.balanced().name(), FilterProfile.completable().name()};
-            for (int i = 0; i < values.length; i++) if (values[i].equals(current)) return values[(i + 1) % values.length];
-            return values[0];
-        }
-
-        private String rngLabel() {
-            var seed = CONTROLLER.settings().customRngSeed();
-            return seed == null ? "Overworld" : Long.toString(seed);
+            try {
+                CONTROLLER.ensureCategorySelections();
+            } catch (IOException | IllegalStateException exception) {
+                CONTROLLER.setStatus("Seed selection failed: " + exception.getMessage());
+            }
+            var settings = CONTROLLER.settings();
+            enabledButton.setMessage(Component.literal(toggleText("MCSR", settings.enabled())));
+            profileButton.setMessage(Component.literal("Profile: " + settings.profileName()));
+            completableButton.setMessage(Component.literal(
+                    toggleText("Completable", settings.completable())));
+            rngButton.setMessage(Component.literal(
+                    toggleText("Standardized RNG", settings.standardizedRng())));
+            brutesButton.setMessage(Component.literal(
+                    toggleText("Disable Piglin Brutes", settings.disablePiglinBrutes())));
+            overworldCategoryButton.setMessage(Component.literal(
+                    "Overworld: " + settings.overworldCategory()));
+            netherCategoryButton.setMessage(Component.literal(
+                    "Nether: " + settings.netherCategory()));
+            overworldValueLabel.setMessage(Component.literal(
+                    displayText(seedText("Overworld", settings.overworldSeed()), 500)));
+            netherValueLabel.setMessage(Component.literal(
+                    displayText(seedText("Nether", settings.netherSeed()), 500)));
+            countLabel.setMessage(Component.literal(
+                    displayText(CONTROLLER.countsText(), 500)));
+            statusLabel.setMessage(Component.literal(
+                    displayText("Status: " + CONTROLLER.status(), 500)));
         }
     }
 }
